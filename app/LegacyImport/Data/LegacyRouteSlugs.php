@@ -1,0 +1,93 @@
+<?php
+
+namespace App\LegacyImport\Data;
+
+/**
+ * Canonical legacy route keys and default URL slugs (from production `routes` table).
+ *
+ * @return list<array{legacy_id: int, route_key: string, slug: string}>
+ */
+final class LegacyRouteSlugs
+{
+    public static function rows(): array
+    {
+        return [
+            ['legacy_id' => 1, 'route_key' => 'add_coupon', 'slug' => 'add-coupon'],
+            ['legacy_id' => 2, 'route_key' => 'add_product', 'slug' => 'add-product'],
+            ['legacy_id' => 3, 'route_key' => 'add_shipping_zone', 'slug' => 'add-shipping-zone'],
+            ['legacy_id' => 4, 'route_key' => 'admin', 'slug' => 'admin'],
+            ['legacy_id' => 5, 'route_key' => 'blog', 'slug' => 'blog'],
+            ['legacy_id' => 6, 'route_key' => 'bulk_product_upload', 'slug' => 'bulk-product-upload'],
+            ['legacy_id' => 7, 'route_key' => 'cart', 'slug' => 'cart'],
+            ['legacy_id' => 8, 'route_key' => 'category', 'slug' => 'category'],
+            ['legacy_id' => 9, 'route_key' => 'change_password', 'slug' => 'change-password'],
+            ['legacy_id' => 10, 'route_key' => 'comments', 'slug' => 'comments'],
+            ['legacy_id' => 11, 'route_key' => 'contact', 'slug' => 'contact'],
+            ['legacy_id' => 12, 'route_key' => 'coupons', 'slug' => 'coupons'],
+            ['legacy_id' => 13, 'route_key' => 'dashboard', 'slug' => 'dashboard'],
+            ['legacy_id' => 14, 'route_key' => 'downloads', 'slug' => 'downloads'],
+            ['legacy_id' => 15, 'route_key' => 'earnings', 'slug' => 'earnings'],
+            ['legacy_id' => 16, 'route_key' => 'edit_coupon', 'slug' => 'edit-coupon'],
+            ['legacy_id' => 17, 'route_key' => 'edit_product', 'slug' => 'edit-product'],
+            ['legacy_id' => 18, 'route_key' => 'edit_profile', 'slug' => 'edit-profile'],
+            ['legacy_id' => 19, 'route_key' => 'edit_shipping_zone', 'slug' => 'edit-shipping-zone'],
+            ['legacy_id' => 20, 'route_key' => 'featured_products', 'slug' => 'featured-products'],
+            ['legacy_id' => 21, 'route_key' => 'followers', 'slug' => 'followers'],
+            ['legacy_id' => 22, 'route_key' => 'following', 'slug' => 'following'],
+            ['legacy_id' => 23, 'route_key' => 'forgot_password', 'slug' => 'forgot-password'],
+            ['legacy_id' => 24, 'route_key' => 'help_center', 'slug' => 'help-center'],
+            ['legacy_id' => 25, 'route_key' => 'latest_products', 'slug' => 'latest-products'],
+            ['legacy_id' => 26, 'route_key' => 'location', 'slug' => 'location'],
+            ['legacy_id' => 27, 'route_key' => 'members', 'slug' => 'members'],
+            ['legacy_id' => 29, 'route_key' => 'messages', 'slug' => 'messages'],
+            ['legacy_id' => 30, 'route_key' => 'my_coupons', 'slug' => 'my-coupons'],
+            ['legacy_id' => 31, 'route_key' => 'orders', 'slug' => 'orders'],
+            ['legacy_id' => 32, 'route_key' => 'order_completed', 'slug' => 'order-completed'],
+            ['legacy_id' => 33, 'route_key' => 'order_details', 'slug' => 'order-details'],
+            ['legacy_id' => 34, 'route_key' => 'payment', 'slug' => 'payment'],
+            ['legacy_id' => 36, 'route_key' => 'payment_method', 'slug' => 'payment-method'],
+            ['legacy_id' => 38, 'route_key' => 'product', 'slug' => 'product'],
+            ['legacy_id' => 39, 'route_key' => 'products', 'slug' => 'products'],
+            ['legacy_id' => 40, 'route_key' => 'product_details', 'slug' => 'product-details'],
+            ['legacy_id' => 41, 'route_key' => 'profile', 'slug' => 'profile'],
+            ['legacy_id' => 43, 'route_key' => 'quote_requests', 'slug' => 'quote-requests'],
+            ['legacy_id' => 44, 'route_key' => 'refund_requests', 'slug' => 'refund-requests'],
+            ['legacy_id' => 45, 'route_key' => 'register', 'slug' => 'register'],
+            ['legacy_id' => 46, 'route_key' => 'register_success', 'slug' => 'register-success'],
+            ['legacy_id' => 47, 'route_key' => 'reset_password', 'slug' => 'reset-password'],
+            ['legacy_id' => 48, 'route_key' => 'reviews', 'slug' => 'reviews'],
+            ['legacy_id' => 49, 'route_key' => 'rss_feeds', 'slug' => 'rss-feeds'],
+            ['legacy_id' => 50, 'route_key' => 'sale', 'slug' => 'sale'],
+            ['legacy_id' => 51, 'route_key' => 'sales', 'slug' => 'sales'],
+            ['legacy_id' => 52, 'route_key' => 'search', 'slug' => 'search'],
+            ['legacy_id' => 53, 'route_key' => 'select_membership_plan', 'slug' => 'select-membership-plan'],
+            ['legacy_id' => 54, 'route_key' => 'seller', 'slug' => 'seller'],
+            ['legacy_id' => 55, 'route_key' => 'settings', 'slug' => 'settings'],
+            ['legacy_id' => 57, 'route_key' => 'shipping', 'slug' => 'shipping'],
+            ['legacy_id' => 58, 'route_key' => 'shipping_address', 'slug' => 'shipping-address'],
+            ['legacy_id' => 59, 'route_key' => 'shipping_settings', 'slug' => 'shipping-settings'],
+            ['legacy_id' => 60, 'route_key' => 'shops', 'slug' => 'shops'],
+            ['legacy_id' => 61, 'route_key' => 'shop_settings', 'slug' => 'shop-settings'],
+            ['legacy_id' => 62, 'route_key' => 'social_media', 'slug' => 'social-media'],
+            ['legacy_id' => 63, 'route_key' => 'start_selling', 'slug' => 'start-selling'],
+            ['legacy_id' => 64, 'route_key' => 'submit_request', 'slug' => 'submit-request'],
+            ['legacy_id' => 65, 'route_key' => 'tag', 'slug' => 'tag'],
+            ['legacy_id' => 66, 'route_key' => 'terms_conditions', 'slug' => 'terms-conditions'],
+            ['legacy_id' => 67, 'route_key' => 'ticket', 'slug' => 'ticket'],
+            ['legacy_id' => 68, 'route_key' => 'tickets', 'slug' => 'tickets'],
+            ['legacy_id' => 69, 'route_key' => 'wishlist', 'slug' => 'wishlist'],
+            ['legacy_id' => 71, 'route_key' => 'service_payment_completed', 'slug' => 'service-payment-completed'],
+            ['legacy_id' => 72, 'route_key' => 'wallet', 'slug' => 'wallet'],
+            ['legacy_id' => 73, 'route_key' => 'affiliate_program', 'slug' => 'affiliate-program'],
+            ['legacy_id' => 74, 'route_key' => 'payments', 'slug' => 'payments'],
+            ['legacy_id' => 75, 'route_key' => 'cash_on_delivery', 'slug' => 'cash-on-delivery'],
+            ['legacy_id' => 76, 'route_key' => 'shop_policies', 'slug' => 'shop-policies'],
+            ['legacy_id' => 77, 'route_key' => 'affiliate', 'slug' => 'affiliate'],
+            ['legacy_id' => 78, 'route_key' => 'coupon_products', 'slug' => 'coupon-products'],
+            ['legacy_id' => 79, 'route_key' => 'delete_account', 'slug' => 'delete-account'],
+            ['legacy_id' => 80, 'route_key' => 'my_reviews', 'slug' => 'my-reviews'],
+            ['legacy_id' => 81, 'route_key' => 'affiliate_links', 'slug' => 'affiliate-links'],
+            ['legacy_id' => 82, 'route_key' => 'checkout', 'slug' => 'checkout'],
+        ];
+    }
+}

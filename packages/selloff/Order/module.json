@@ -1,0 +1,6 @@
+{
+    "name": "Order",
+    "alias": "order",
+    "description": "Selloff Order module",
+    "version": "1.0.0"
+}

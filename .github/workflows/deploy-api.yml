@@ -1,0 +1,76 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main, staging]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-api-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Select environment script
+        id: target
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "script=/usr/local/bin/selloff/deploy_api_production.sh" >> "$GITHUB_OUTPUT"
+            echo "env_name=production" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF_NAME}" = "staging" ]; then
+            echo "script=/usr/local/bin/selloff/deploy_api_staging.sh" >> "$GITHUB_OUTPUT"
+            echo "env_name=staging" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unsupported branch: ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+      - name: Verify deploy secrets
+        run: |
+          missing=""
+          [ -z "${{ secrets.DROPLET_HOST }}" ] && missing="${missing} DROPLET_HOST"
+          [ -z "${{ secrets.DROPLET_USER }}" ] && missing="${missing} DROPLET_USER"
+          [ -z "${{ secrets.DROPLET_SSH_KEY }}" ] && missing="${missing} DROPLET_SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing GitHub secrets (set in repo Settings → Secrets):${missing}"
+            exit 1
+          fi
+          echo "Deploy secrets present."
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          # DROPLET_PORT optional; default 22 when unset.
+          port: ${{ secrets.DROPLET_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            echo "Deploying ${{ github.ref_name }} to ${{ steps.target.outputs.env_name }}"
+            set +e
+            deploy_output="$(bash "${{ steps.target.outputs.script }}" 2>&1)"
+            deploy_rc=$?
+            set -e
+            printf '%s\n' "$deploy_output"
+            if [ "$deploy_rc" -ne 0 ]; then
+              perm_errors="$(printf '%s\n' "$deploy_output" | grep -E 'Operation not permitted' || true)"
+              if [ -n "$perm_errors" ]; then
+                unexpected_perm_errors="$(printf '%s\n' "$perm_errors" | grep -Ev "^chmod: changing permissions of '.*/shared/storage/framework/views/[^']+': Operation not permitted$" || true)"
+                if [ -z "$unexpected_perm_errors" ]; then
+                  echo "::warning::Ignoring non-fatal chmod permission warnings on compiled Laravel view cache files."
+                else
+                  echo "::error::Deploy script failed with exit code $deploy_rc"
+                  printf '%s\n' "$unexpected_perm_errors"
+                  exit "$deploy_rc"
+                fi
+              else
+                echo "::error::Deploy script failed with exit code $deploy_rc"
+                exit "$deploy_rc"
+              fi
+            fi
+            echo "Deployment complete"

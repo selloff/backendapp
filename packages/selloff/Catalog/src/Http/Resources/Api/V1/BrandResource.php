@@ -1,0 +1,21 @@
+<?php
+
+namespace App\Modules\Selloff\Catalog\Http\Resources\Api\V1;
+
+use App\Modules\Selloff\Catalog\Models\Brand;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/** @mixin Brand */
+class BrandResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'image_path' => $this->image_path,
+            'show_on_slider' => $this->show_on_slider,
+        ];
+    }
+}

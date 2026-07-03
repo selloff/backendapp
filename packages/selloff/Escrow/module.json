@@ -1,0 +1,6 @@
+{
+    "name": "Escrow",
+    "alias": "escrow",
+    "description": "Selloff Escrow module",
+    "version": "1.0.0"
+}

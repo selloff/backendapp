@@ -1,0 +1,6 @@
+{
+    "name": "Payout",
+    "alias": "payout",
+    "description": "Selloff Payout module",
+    "version": "1.0.0"
+}

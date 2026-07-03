@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+
+env:
+  # GitHub Actions: opt into Node 24 for JS-based actions before the default runner switch.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  tests:
+    name: PHP tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # Match composer.json require ("php": "^8.3") for consistent CI/runtime parity.
+          php-version: '8.3'
+          # gd: required by Dompdf image paths (PDF tests) and aligns with spatie/medialibrary default image_driver.
+          extensions: mbstring, xml, sqlite3, pdo_sqlite, bcmath, ctype, curl, dom, fileinfo, intl, json, openssl, tokenizer, zip, gd
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress --ansi
+
+      - name: Prepare application environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --ansi --force
+
+      - name: Clear config cache
+        run: php artisan config:clear --ansi
+
+      - name: Ensure writable Laravel paths
+        run: chmod -R 775 storage bootstrap/cache || true
+
+      - name: Run Pest
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+        run: ./vendor/bin/pest --colors=never
