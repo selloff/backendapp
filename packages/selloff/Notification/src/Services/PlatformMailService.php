@@ -67,6 +67,10 @@ class PlatformMailService
             return;
         }
 
+        if (app()->environment('testing')) {
+            return;
+        }
+
         $settings = $this->settings->all();
         $service = (string) ($settings['mail_service']
             ?? config('selloff.mail.default_service', 'mailtrap'));
