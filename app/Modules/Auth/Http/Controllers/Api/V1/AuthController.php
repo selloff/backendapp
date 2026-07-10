@@ -108,6 +108,13 @@ class AuthController extends Controller
     ): JsonResponse {
         $status = $sendLink->execute($request->validated('email'));
 
+        if ($status === SendPasswordResetLinkAction::STATUS_MAIL_FAILED) {
+            return ApiResponse::error(
+                'We could not send the reset email. Check API mail settings and try again later.',
+                503,
+            );
+        }
+
         if ($status !== Password::RESET_LINK_SENT) {
             return ApiResponse::error(__($status), 422);
         }

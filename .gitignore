@@ -27,3 +27,6 @@ Homestead.yaml
 Thumbs.db
 production-mysql-dump.sql
 .env
+.env.production
+.env.staging
+.env.example

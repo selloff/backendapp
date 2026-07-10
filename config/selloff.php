@@ -242,7 +242,7 @@ return [
 
     'image_url_prefix' => env('SELLOFF_IMAGE_URL_PREFIX', '/storage/'),
 
-    'spa_url' => env('SPA_URL', env('VITE_APP_URL', 'http://localhost:5173')),
+    'spa_url' => env('SPA_URL', env('FRONTEND_URL', env('VITE_APP_URL', 'http://localhost:5173'))),
 
     'mobile_oauth_redirect_scheme' => env('SELLOFF_MOBILE_OAUTH_SCHEME', 'selloff'),
 

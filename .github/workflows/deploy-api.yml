@@ -35,10 +35,9 @@ jobs:
           [ -z "${{ secrets.DROPLET_USER }}" ] && missing="${missing} DROPLET_USER"
           [ -z "${{ secrets.DROPLET_SSH_KEY }}" ] && missing="${missing} DROPLET_SSH_KEY"
           if [ -n "$missing" ]; then
-            echo "::error::Missing GitHub secrets (set in repo Settings → Secrets):${missing}"
+            echo "::error::Missing GitHub secrets:${missing}"
             exit 1
           fi
-          echo "Deploy secrets present."
 
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -46,31 +45,10 @@ jobs:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
-          # DROPLET_PORT optional; default 22 when unset.
           port: ${{ secrets.DROPLET_PORT || '22' }}
           script_stop: true
           script: |
             set -euo pipefail
             echo "Deploying ${{ github.ref_name }} to ${{ steps.target.outputs.env_name }}"
-            set +e
-            deploy_output="$(bash "${{ steps.target.outputs.script }}" 2>&1)"
-            deploy_rc=$?
-            set -e
-            printf '%s\n' "$deploy_output"
-            if [ "$deploy_rc" -ne 0 ]; then
-              perm_errors="$(printf '%s\n' "$deploy_output" | grep -E 'Operation not permitted' || true)"
-              if [ -n "$perm_errors" ]; then
-                unexpected_perm_errors="$(printf '%s\n' "$perm_errors" | grep -Ev "^chmod: changing permissions of '.*/shared/storage/framework/views/[^']+': Operation not permitted$" || true)"
-                if [ -z "$unexpected_perm_errors" ]; then
-                  echo "::warning::Ignoring non-fatal chmod permission warnings on compiled Laravel view cache files."
-                else
-                  echo "::error::Deploy script failed with exit code $deploy_rc"
-                  printf '%s\n' "$unexpected_perm_errors"
-                  exit "$deploy_rc"
-                fi
-              else
-                echo "::error::Deploy script failed with exit code $deploy_rc"
-                exit "$deploy_rc"
-              fi
-            fi
+            bash "${{ steps.target.outputs.script }}"
             echo "Deployment complete"
