@@ -29,6 +29,36 @@ test('homepage returns selloff section order and settings', function () {
     expect($phones['products'])->not->toBeEmpty();
 });
 
+test('homepage hero scope returns only above-the-fold payload', function () {
+    $full = $this->getJson('/api/v1/homepage')->assertOk()->json('data');
+    $hero = $this->getJson('/api/v1/homepage?scope=hero')->assertOk()->json('data');
+
+    expect($hero['sliders'])->not->toBeEmpty();
+    expect($hero['sections'])->toHaveCount(1);
+    expect($hero['sections'][0]['key'])->toBe($full['sections'][0]['key']);
+    expect($hero['promoted_products'])->toBe([]);
+    expect($hero['trending_products'])->toBe([]);
+    expect($hero['category_carousels'])->toBe([]);
+    expect($hero['blog_posts'])->toBe([]);
+});
+
+test('homepage deferred scope returns below-the-fold payload', function () {
+    $full = $this->getJson('/api/v1/homepage')->assertOk()->json('data');
+    $deferred = $this->getJson('/api/v1/homepage?scope=deferred')->assertOk()->json('data');
+
+    expect($deferred['sliders'])->toBe([]);
+    expect(collect($deferred['sections'])->pluck('key')->all())
+        ->toBe(collect($full['sections'])->slice(1)->pluck('key')->all());
+
+    if (count($full['sections']) > 1) {
+        expect($deferred['sections'])->not->toBeEmpty();
+    }
+
+    expect($deferred['promoted_products'])->toBe($full['promoted_products']);
+    expect($deferred['trending_products'])->toBe($full['trending_products']);
+    expect($deferred['category_carousels'])->toBe($full['category_carousels']);
+});
+
 test('homepage normalizes featured categories design values', function () {
     app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
         'fea_categories_design' => 'square_layout',

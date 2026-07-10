@@ -55,19 +55,90 @@ class HomepageAssemblyService
     /**
      * @return array<string, mixed>
      */
-    public function build(?int $priorityStateId = null, ?int $priorityCityId = null): array
+    public function build(?int $priorityStateId = null, ?int $priorityCityId = null, string $scope = 'full'): array
     {
         $this->priorityStateId = $priorityStateId;
         $this->priorityCityId = $priorityCityId;
 
         $settings = $this->homepageSettings();
 
+        return match ($scope) {
+            'hero' => $this->buildHero($settings),
+            'deferred' => $this->buildDeferred($settings),
+            default => $this->buildFull($settings),
+        };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildFull(array $settings): array
+    {
         return [
             'sliders' => $this->loadSliders(),
             'sections' => $this->buildLatestSections($settings),
             'banners' => $this->loadBanners(),
             'mobile_banners' => $this->loadMobileBanners(),
             'site_banners' => $this->siteBanners(),
+            'settings' => $settings,
+            'featured_categories' => $settings['featured_categories']
+                ? CategoryResource::collection($this->loadFeaturedCategories())->resolve()
+                : [],
+            'promoted_products' => $settings['index_promoted_products'] && $settings['promoted_products']
+                ? ProductResource::collection($this->loadPromotedProducts())->resolve()
+                : [],
+            'trending_products' => ProductResource::collection(
+                $this->loadTrendingProducts($settings['index_trending_products_count']),
+            )->resolve(),
+            'special_offers' => ProductResource::collection($this->loadSpecialOffers())->resolve(),
+            'category_carousels' => $this->buildCategoryCarousels(),
+            'brands' => BrandResource::collection($this->loadBrands())->resolve(),
+            'blog_posts' => $this->loadBlogPosts(),
+        ];
+    }
+
+    /**
+     * Above-the-fold payload: hero slider, first latest-products section, banners, settings.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildHero(array $settings): array
+    {
+        return [
+            'sliders' => $this->loadSliders(),
+            'sections' => $this->buildFirstLatestSection($settings),
+            'banners' => $this->loadBanners(),
+            'mobile_banners' => $this->loadMobileBanners(),
+            'site_banners' => $this->siteBanners(),
+            'settings' => $settings,
+            'featured_categories' => [],
+            'promoted_products' => [],
+            'trending_products' => [],
+            'special_offers' => [],
+            'category_carousels' => [],
+            'brands' => [],
+            'blog_posts' => [],
+        ];
+    }
+
+    /**
+     * Below-the-fold payload: remaining sections and heavy catalog blocks.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildDeferred(array $settings): array
+    {
+        $siteBanners = $this->siteBanners();
+
+        return [
+            'sliders' => [],
+            'sections' => $this->buildDeferredLatestSections($settings),
+            'banners' => $this->loadBanners(),
+            'mobile_banners' => [],
+            'site_banners' => [
+                'top' => null,
+                'mid' => $siteBanners['mid'],
+            ],
             'settings' => $settings,
             'featured_categories' => $settings['featured_categories']
                 ? CategoryResource::collection($this->loadFeaturedCategories())->resolve()
@@ -131,48 +202,113 @@ class HomepageAssemblyService
             return [];
         }
 
-        $limit = $settings['index_latest_products_count'];
-        $sections = [];
+        return array_values(array_filter([
+            $this->buildPhoneLatestSection($settings),
+            $this->buildLaptopLatestSection($settings),
+            $this->buildOtherLatestSection($settings),
+        ]));
+    }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildFirstLatestSection(array $settings): array
+    {
+        if (! $settings['index_latest_products']) {
+            return [];
+        }
+
+        foreach ([
+            fn () => $this->buildPhoneLatestSection($settings),
+            fn () => $this->buildLaptopLatestSection($settings),
+            fn () => $this->buildOtherLatestSection($settings),
+        ] as $builder) {
+            $section = $builder();
+            if ($section !== null) {
+                return [$section];
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildDeferredLatestSections(array $settings): array
+    {
+        $sections = $this->buildLatestSections($settings);
+
+        return array_slice($sections, 1);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function buildPhoneLatestSection(array $settings): ?array
+    {
+        $limit = $settings['index_latest_products_count'];
         $phoneCategoryIds = $this->categoryIdsForSlugs(config('selloff.homepage.phone_category_slugs', ['phones']));
         $phoneProducts = $this->latestProductsInCategories($phoneCategoryIds, $limit);
-        if ($phoneProducts->isNotEmpty()) {
-            $phoneCategory = $this->firstCategoryForSlugs(config('selloff.homepage.phone_category_slugs', ['phones']));
-            $sections[] = $this->sectionPayload(
-                key: 'phones',
-                title: (string) config('selloff.homepage.phone_section_title', 'Latest Smartphones & Tablets'),
-                category: $phoneCategory,
-                viewAllPath: $phoneCategory ? $this->categoryListingPath($phoneCategory) : '/products',
-                products: $phoneProducts,
-            );
+        if ($phoneProducts->isEmpty()) {
+            return null;
         }
 
+        $phoneCategory = $this->firstCategoryForSlugs(config('selloff.homepage.phone_category_slugs', ['phones']));
+
+        return $this->sectionPayload(
+            key: 'phones',
+            title: (string) config('selloff.homepage.phone_section_title', 'Latest Smartphones & Tablets'),
+            category: $phoneCategory,
+            viewAllPath: $phoneCategory ? $this->categoryListingPath($phoneCategory) : '/products',
+            products: $phoneProducts,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function buildLaptopLatestSection(array $settings): ?array
+    {
+        $limit = $settings['index_latest_products_count'];
         $laptopCategoryIds = $this->categoryIdsForSlugs(config('selloff.homepage.laptop_category_slugs', ['laptops']));
         $laptopProducts = $this->latestProductsInCategories($laptopCategoryIds, $limit);
-        if ($laptopProducts->isNotEmpty()) {
-            $laptopCategory = $this->firstCategoryForSlugs(config('selloff.homepage.laptop_category_slugs', ['laptops']));
-            $sections[] = $this->sectionPayload(
-                key: 'laptops',
-                title: (string) config('selloff.homepage.laptop_section_title', 'Latest Laptops and Computers'),
-                category: $laptopCategory,
-                viewAllPath: $laptopCategory ? $this->categoryListingPath($laptopCategory) : '/products',
-                products: $laptopProducts,
-            );
+        if ($laptopProducts->isEmpty()) {
+            return null;
         }
 
+        $laptopCategory = $this->firstCategoryForSlugs(config('selloff.homepage.laptop_category_slugs', ['laptops']));
+
+        return $this->sectionPayload(
+            key: 'laptops',
+            title: (string) config('selloff.homepage.laptop_section_title', 'Latest Laptops and Computers'),
+            category: $laptopCategory,
+            viewAllPath: $laptopCategory ? $this->categoryListingPath($laptopCategory) : '/products',
+            products: $laptopProducts,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function buildOtherLatestSection(array $settings): ?array
+    {
+        $limit = $settings['index_latest_products_count'];
+        $phoneCategoryIds = $this->categoryIdsForSlugs(config('selloff.homepage.phone_category_slugs', ['phones']));
+        $laptopCategoryIds = $this->categoryIdsForSlugs(config('selloff.homepage.laptop_category_slugs', ['laptops']));
         $excludedIds = array_values(array_unique(array_merge($phoneCategoryIds, $laptopCategoryIds)));
         $otherProducts = $this->latestProductsExcludingCategories($excludedIds, $limit);
-        if ($otherProducts->isNotEmpty()) {
-            $sections[] = $this->sectionPayload(
-                key: 'other',
-                title: (string) config('selloff.homepage.other_section_title', 'Latest In Other Categories'),
-                category: null,
-                viewAllPath: '/products',
-                products: $otherProducts,
-            );
+        if ($otherProducts->isEmpty()) {
+            return null;
         }
 
-        return $sections;
+        return $this->sectionPayload(
+            key: 'other',
+            title: (string) config('selloff.homepage.other_section_title', 'Latest In Other Categories'),
+            category: null,
+            viewAllPath: '/products',
+            products: $otherProducts,
+        );
     }
 
     /**

@@ -16,10 +16,15 @@ class HomepageController extends Controller
     public function index(Request $request, HomepageAssemblyService $homepage): JsonResponse
     {
         $priority = \App\Modules\Selloff\Catalog\Support\ProductLocationPriorityQuery::fromRequest($request);
+        $scope = $request->string('scope', 'full')->toString();
+        if (! in_array($scope, ['full', 'hero', 'deferred'], true)) {
+            $scope = 'full';
+        }
 
         return ApiResponse::success($homepage->build(
             $priority['priority_state_id'],
             $priority['priority_city_id'],
+            $scope,
         ));
     }
 
