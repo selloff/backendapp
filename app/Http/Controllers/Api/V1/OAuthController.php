@@ -11,6 +11,7 @@ use App\Modules\Selloff\Referral\Actions\ApplyReferralCodeOnRegisterAction;
 use App\Modules\Selloff\Referral\Actions\AwardReferralPointsAction;
 use App\Modules\Selloff\Referral\Actions\EnsureReferralProfileAction;
 use App\Services\Auth\SocialLoginConfig;
+use App\Services\Auth\WelcomeEmailService;
 use App\Support\ApiResponse;
 use App\Support\Gtm\AuthGtmService;
 use Illuminate\Http\JsonResponse;
@@ -67,6 +68,7 @@ class OAuthController extends Controller
         EnsureReferralProfileAction $ensureReferralProfile,
         ApplyReferralCodeOnRegisterAction $applyReferralCode,
         AwardReferralPointsAction $awardReferralPoints,
+        WelcomeEmailService $welcomeEmail,
     ): JsonResponse|RedirectResponse {
         $this->assertProvider($provider);
         abort_unless($socialLogin->isEnabled(), Response::HTTP_FORBIDDEN, 'Social login is disabled.');
@@ -97,6 +99,7 @@ class OAuthController extends Controller
                 $ensureReferralProfile->execute($user);
                 $applyReferralCode->execute($user, $referralCode);
                 $awardReferralPoints->execute($user->fresh());
+                $welcomeEmail->queue($user->fresh());
             }
 
             if ($user->is_disable || $user->is_banned) {

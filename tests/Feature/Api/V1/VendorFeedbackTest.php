@@ -33,9 +33,7 @@ test('vendor cannot leave feedback on own shop', function () {
 });
 
 test('buyer submits pending feedback and admin approval publishes it', function () {
-    Mail::shouldReceive('raw')
-        ->once()
-        ->withArgs(fn (string $body) => str_contains($body, 'seller feedback'));
+    Mail::fake();
 
     $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
     $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
@@ -67,6 +65,11 @@ test('buyer submits pending feedback and admin approval publishes it', function 
         'action' => 'approve',
     ])->assertOk()
         ->assertJsonPath('data.moderation_status', 'approved');
+
+    Mail::assertSent(\App\Modules\Selloff\Notification\Mail\TransactionalMail::class, function ($mail): bool {
+        return $mail->hasTo('vendor@selloff.test')
+            && str_contains($mail->mailSubject, 'seller feedback');
+    });
 
     $this->getJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback")
         ->assertOk()

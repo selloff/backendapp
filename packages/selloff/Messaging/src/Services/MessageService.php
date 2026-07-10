@@ -5,11 +5,16 @@ namespace App\Modules\Selloff\Messaging\Services;
 use App\Models\User;
 use App\Modules\Selloff\Messaging\Models\Conversation;
 use App\Modules\Selloff\Messaging\Models\Message;
+use App\Modules\Selloff\Notification\Services\MessageEmailService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class MessageService
 {
+    public function __construct(
+        private readonly MessageEmailService $messageEmails,
+    ) {}
+
     public function conversationsForUser(User $user): Collection
     {
         return Conversation::query()
@@ -108,7 +113,10 @@ class MessageService
 
         $conversation->update(['last_message_at' => now()]);
 
-        return $message->load(['sender', 'receiver']);
+        $message = $message->load(['sender', 'receiver']);
+        $this->messageEmails->scheduleIfNeeded($message, $conversation);
+
+        return $message;
     }
 
     private function findConversationForUser(int $conversationId, User $user): Conversation

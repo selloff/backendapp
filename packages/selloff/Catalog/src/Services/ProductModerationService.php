@@ -3,10 +3,15 @@
 namespace App\Modules\Selloff\Catalog\Services;
 
 use App\Modules\Selloff\Catalog\Models\Product;
+use App\Modules\Selloff\Notification\Services\ProductModerationEmailService;
 use Illuminate\Validation\ValidationException;
 
 class ProductModerationService
 {
+    public function __construct(
+        private readonly ProductModerationEmailService $emails,
+    ) {}
+
     public function approve(Product $product): Product
     {
         $product->update([
@@ -19,7 +24,10 @@ class ProductModerationService
             'is_edited' => false,
         ]);
 
-        return $product->fresh()->load(['translations', 'vendor.vendorProfile', 'category.translations', 'brand']);
+        $fresh = $product->fresh()->load(['translations', 'vendor.vendorProfile', 'category.translations', 'brand', 'images']);
+        $this->emails->queueApproved($fresh);
+
+        return $fresh;
     }
 
     public function reject(Product $product, ?string $reason = null): Product
@@ -30,14 +38,19 @@ class ProductModerationService
             ]);
         }
 
+        $trimmedReason = trim($reason);
+
         $product->update([
             'is_verified' => false,
             'status' => 'hidden',
             'visibility' => 'hidden',
             'is_active' => false,
-            'reject_reason' => trim($reason),
+            'reject_reason' => $trimmedReason,
         ]);
 
-        return $product->fresh()->load(['translations', 'vendor.vendorProfile', 'category.translations', 'brand']);
+        $fresh = $product->fresh()->load(['translations', 'vendor.vendorProfile', 'category.translations', 'brand', 'images']);
+        $this->emails->queueRejected($fresh, $trimmedReason);
+
+        return $fresh;
     }
 }

@@ -4,6 +4,7 @@ namespace App\Modules\Selloff\Vendor\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Modules\Selloff\Notification\Services\ShopOpeningEmailService;
 use App\Services\Auth\RolePermissionSync;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -34,7 +35,7 @@ class AdminShopOpeningController extends Controller
         return ApiResponse::success($users);
     }
 
-    public function approve(User $user): JsonResponse
+    public function approve(User $user, ShopOpeningEmailService $emails): JsonResponse
     {
         $user->update([
             'shop_opening_status' => 0,
@@ -44,10 +45,13 @@ class AdminShopOpeningController extends Controller
         app(RolePermissionSync::class)->sync();
         $user->syncRoles(['vendor']);
 
-        return ApiResponse::success($this->formatRequest($user->fresh('vendorProfile')));
+        $fresh = $user->fresh('vendorProfile');
+        $emails->queueApproved($fresh);
+
+        return ApiResponse::success($this->formatRequest($fresh));
     }
 
-    public function reject(Request $request, User $user): JsonResponse
+    public function reject(Request $request, User $user, ShopOpeningEmailService $emails): JsonResponse
     {
         $data = $request->validate([
             'status' => ['required', 'in:2,3'],
@@ -59,7 +63,10 @@ class AdminShopOpeningController extends Controller
             'shop_opening_rejection_reason' => $data['reason'] ?? null,
         ]);
 
-        return ApiResponse::success($this->formatRequest($user->fresh('vendorProfile')));
+        $fresh = $user->fresh('vendorProfile');
+        $emails->queueRejected($fresh, (int) $data['status'], $data['reason'] ?? null);
+
+        return ApiResponse::success($this->formatRequest($fresh));
     }
 
     private function formatRequest(User $user): array

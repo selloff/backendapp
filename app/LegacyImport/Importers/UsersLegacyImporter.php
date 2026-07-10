@@ -57,6 +57,7 @@ class UsersLegacyImporter implements LegacyImporter
                 'phone_number' => $row['phone_number'] ?? null,
                 'about_me' => $row['about_me'] ?? null,
                 'show_rss_feeds' => LegacyValueCoercer::bool($row['show_rss_feeds'] ?? 0),
+                'send_email_new_message' => LegacyValueCoercer::bool($row['send_email_new_message'] ?? 1),
                 'country_id' => $this->resolveLocationId($context, 'location_countries', $row['country_id'] ?? null),
                 'state_id' => $this->resolveLocationId($context, 'location_states', $row['state_id'] ?? null),
                 'city_id' => $this->resolveLocationId($context, 'location_cities', $row['city_id'] ?? null),

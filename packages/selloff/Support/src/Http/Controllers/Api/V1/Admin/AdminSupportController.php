@@ -3,6 +3,7 @@
 namespace App\Modules\Selloff\Support\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Selloff\Notification\Services\SupportEmailService;
 use App\Modules\Selloff\Support\Models\SupportMessage;
 use App\Modules\Selloff\Support\Models\SupportTicket;
 use App\Support\ApiResponse;
@@ -11,6 +12,10 @@ use Illuminate\Http\Request;
 
 class AdminSupportController extends Controller
 {
+    public function __construct(
+        private readonly SupportEmailService $supportEmails,
+    ) {}
+
     public function tickets(Request $request): JsonResponse
     {
         $perPage = min($request->integer('show', $request->integer('per_page', 15)), 100);
@@ -55,6 +60,8 @@ class AdminSupportController extends Controller
         } elseif ($supportTicket->status === 'open') {
             $supportTicket->update(['status' => 'pending']);
         }
+
+        $this->supportEmails->queueAdminReply($supportTicket->fresh());
 
         return ApiResponse::success($supportTicket->fresh()->load(['user', 'messages.user']));
     }

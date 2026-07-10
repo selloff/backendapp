@@ -18,6 +18,7 @@ use App\Modules\Selloff\Catalog\Support\ProductLocationPriorityQuery;
 use App\Modules\Selloff\Media\Models\ProductImage;
 use App\Modules\Selloff\Catalog\Services\ProductEditedModerationService;
 use App\Modules\Selloff\Catalog\Services\ProductRecommendationService;
+use App\Modules\Selloff\Notification\Services\NewProductAdminEmailService;
 use App\Modules\Selloff\Catalog\Services\ProductShippingEstimateService;
 use App\Modules\Selloff\Catalog\Services\ProductSkuGenerator;
 use App\Modules\Selloff\Catalog\Services\SyncProductCatalogExtrasService;
@@ -222,6 +223,8 @@ class ProductController extends Controller
             $customFields,
         );
 
+        $this->queueNewProductAdminEmail($product);
+
         return ApiResponse::success(
             new ProductResource($product->load([
                 'translations',
@@ -276,7 +279,12 @@ class ProductController extends Controller
                 $product,
                 $updateAttributes,
             );
+            $wasPublished = $product->status === 'published' && ! $product->is_draft;
             $product->update($updateAttributes);
+
+            if (! $wasPublished) {
+                $this->queueNewProductAdminEmail($product->fresh());
+            }
         }
 
         if (! empty($translationFields)) {
@@ -366,5 +374,16 @@ class ProductController extends Controller
         if ($this->skuGenerator->shouldGenerate($sku, $listingType)) {
             $data['sku'] = $this->skuGenerator->generate($vendorId);
         }
+    }
+
+    private function queueNewProductAdminEmail(Product $product): void
+    {
+        if ($product->is_draft || $product->status !== 'published') {
+            return;
+        }
+
+        app(NewProductAdminEmailService::class)->queue(
+            $product->loadMissing(['translations', 'vendor', 'images']),
+        );
     }
 }

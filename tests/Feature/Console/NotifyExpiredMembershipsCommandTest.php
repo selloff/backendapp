@@ -39,16 +39,7 @@ test('command sends expiry email with renew link', function () {
 });
 
 test('service notify includes renew link in email body', function () {
-    $capturedBody = null;
-
-    Mail::shouldReceive('raw')
-        ->once()
-        ->withArgs(function (string $body) use (&$capturedBody) {
-            $capturedBody = $body;
-
-            return str_contains($body, 'https://app.selloff.test/vendor/membership/subscribe')
-                && str_contains($body, 'Demo Vendor Pro');
-        });
+    Mail::fake();
 
     $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
     $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
@@ -65,7 +56,11 @@ test('service notify includes renew link in email body', function () {
 
     app(MembershipExpiryNotificationService::class)->notify($subscription->fresh());
 
-    expect($capturedBody)->not->toBeNull();
+    Mail::assertSent(\App\Modules\Selloff\Notification\Mail\TransactionalMail::class, function ($mail): bool {
+        return $mail->hasTo('vendor@selloff.test')
+            && ($mail->templateData['renewUrl'] ?? null) === 'https://app.selloff.test/vendor/membership/subscribe'
+            && str_contains($mail->mailSubject, 'Demo Vendor Pro');
+    });
 });
 
 test('command skips already notified subscriptions', function () {

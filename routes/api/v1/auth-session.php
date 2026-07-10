@@ -2,6 +2,7 @@
 
 use App\Modules\Auth\Http\Controllers\Api\V1\AuthController;
 use App\Modules\Auth\Http\Controllers\Api\V1\MeController;
+use App\Modules\Auth\Http\Controllers\Api\V1\PresenceController;
 use App\Http\Controllers\Api\V1\OAuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -20,6 +21,7 @@ Route::prefix('auth')->group(function (): void {
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/logout', [AuthController::class, 'logout']);
+        Route::post('/presence', [PresenceController::class, 'store']);
         Route::get('/me', [MeController::class, 'show']);
         Route::patch('/me', [MeController::class, 'update']);
         Route::put('/password', [MeController::class, 'updatePassword']);

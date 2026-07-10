@@ -4,6 +4,7 @@ namespace App\Modules\Selloff\Order\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Selloff\Catalog\Models\Product;
+use App\Modules\Selloff\Notification\Services\QuoteEmailService;
 use App\Modules\Selloff\Order\Models\QuoteRequest;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -22,7 +23,7 @@ class QuoteRequestController extends Controller
         return ApiResponse::success($quotes);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, QuoteEmailService $emails): JsonResponse
     {
         $data = $request->validate([
             'product_id' => ['required', 'exists:products,id'],
@@ -41,10 +42,13 @@ class QuoteRequestController extends Controller
             'status' => 'pending',
         ]);
 
-        return ApiResponse::success($quote->load(['product.translations', 'seller']), 201);
+        $fresh = $quote->load(['product.translations', 'seller']);
+        $emails->queueRequest($fresh);
+
+        return ApiResponse::success($fresh, 201);
     }
 
-    public function update(Request $request, QuoteRequest $quoteRequest): JsonResponse
+    public function update(Request $request, QuoteRequest $quoteRequest, QuoteEmailService $emails): JsonResponse
     {
         abort_unless((int) $quoteRequest->buyer_id === (int) $request->user()->id, 403);
 
@@ -56,6 +60,14 @@ class QuoteRequestController extends Controller
 
         $quoteRequest->update(['status' => $data['status']]);
 
-        return ApiResponse::success($quoteRequest->fresh()->load(['product.translations', 'seller']));
+        $fresh = $quoteRequest->fresh()->load(['product.translations', 'seller']);
+
+        if ($data['status'] === 'accepted') {
+            $emails->queueAccepted($fresh);
+        } elseif ($data['status'] === 'rejected') {
+            $emails->queueRejected($fresh);
+        }
+
+        return ApiResponse::success($fresh);
     }
 }

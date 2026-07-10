@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use App\Services\Platform\PlatformSettingsService;
+use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
@@ -29,12 +30,30 @@ test('admin can update email transport and options', function () {
         'group' => 'email',
         'settings' => [
             'email_verification' => false,
+            'email_option_welcome' => false,
+            'email_option_reset_password' => true,
+            'email_option_new_product' => false,
+            'email_option_product_moderation' => true,
             'email_option_new_order' => false,
+            'email_option_order_shipped' => true,
+            'email_option_refund' => false,
+            'email_option_bidding_system' => true,
+            'email_option_new_message' => false,
+            'email_option_vendor_feedback' => true,
+            'email_option_membership_purchase' => false,
+            'email_option_membership_expiry' => true,
+            'email_option_promotion_applied' => false,
+            'email_option_contact_messages' => true,
+            'email_option_shop_opening_request' => false,
+            'email_option_support_system' => true,
+            'email_option_escrow' => false,
             'mail_options_account' => 'ops@selloff.test',
         ],
     ], superAdminPinHeaders())
         ->assertOk()
         ->assertJsonPath('data.settings.email_verification', false)
+        ->assertJsonPath('data.settings.email_option_welcome', false)
+        ->assertJsonPath('data.settings.email_option_escrow', false)
         ->assertJsonPath('data.settings.mail_options_account', 'ops@selloff.test');
 });
 
@@ -75,6 +94,8 @@ test('admin can update social login and visual settings', function () {
 });
 
 test('admin can send test email', function () {
+    Mail::fake();
+
     $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
     Sanctum::actingAs($admin);
 

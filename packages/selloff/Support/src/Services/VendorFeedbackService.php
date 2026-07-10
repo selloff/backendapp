@@ -3,6 +3,7 @@
 namespace App\Modules\Selloff\Support\Services;
 
 use App\Models\User;
+use App\Modules\Selloff\Notification\Services\VendorFeedbackEmailService;
 use App\Modules\Selloff\Support\Models\Feedback;
 use App\Modules\Selloff\Support\Support\FeedbackModerationStatus;
 use App\Services\Media\MediaUploadService;
@@ -13,6 +14,7 @@ class VendorFeedbackService
     public function __construct(
         private readonly VendorFeedbackEligibilityService $eligibility,
         private readonly MediaUploadService $mediaUpload,
+        private readonly VendorFeedbackEmailService $feedbackEmails,
     ) {}
 
     /**
@@ -64,6 +66,10 @@ class VendorFeedbackService
             }
             $existing->update($payload);
             $feedback = $existing->fresh();
+        }
+
+        if ($feedback->moderation_status === FeedbackModerationStatus::PENDING) {
+            $this->feedbackEmails->queueReceived($feedback);
         }
 
         return $feedback->load(['user:id,first_name,last_name,email,slug,avatar', 'replies.author:id,name', 'dispute']);

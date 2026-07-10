@@ -3,6 +3,7 @@
 namespace App\Modules\Selloff\Order\Services;
 
 use App\Models\User;
+use App\Modules\Selloff\Notification\Services\RefundEmailService;
 use App\Modules\Selloff\Order\Models\DigitalSale;
 use App\Modules\Selloff\Order\Models\Order;
 use App\Modules\Selloff\Order\Models\OrderItem;
@@ -14,7 +15,11 @@ use Illuminate\Validation\ValidationException;
 
 class RefundService
 {
-    public function __construct(private readonly VendorEarningService $vendorEarnings) {}
+    public function __construct(
+        private readonly VendorEarningService $vendorEarnings,
+        private readonly RefundEmailService $emails,
+    ) {}
+
     public function createForOrder(Order $order, User $initiator, ?string $description = null): RefundRequest
     {
         if (! in_array($order->payment_status, ['payment_received', 'awaiting_payment'], true)) {
@@ -26,7 +31,7 @@ class RefundService
         $sellerId = $order->items()->value('seller_id');
         $orderItemId = $order->items()->count() === 1 ? $order->items()->value('id') : null;
 
-        return RefundRequest::query()->create([
+        $refund = RefundRequest::query()->create([
             'order_id' => $order->id,
             'order_number' => $order->order_number,
             'order_item_id' => $orderItemId,
@@ -36,6 +41,10 @@ class RefundService
             'status' => 'pending',
             'is_completed' => false,
         ]);
+
+        $this->emails->queueSubmitted($refund->load(['seller', 'order']));
+
+        return $refund;
     }
 
     public function vendorApprove(RefundRequest $refundRequest, User $seller, ?string $message = null): RefundRequest
@@ -59,7 +68,12 @@ class RefundService
             ]);
         }
 
-        return $refundRequest->fresh()->load(['order', 'buyer', 'seller']);
+        $fresh = $refundRequest->fresh()->load(['order', 'buyer', 'seller']);
+        if ($refundRequest->buyer) {
+            $this->emails->queueApproved($fresh, $refundRequest->buyer);
+        }
+
+        return $fresh;
     }
 
     public function vendorReject(RefundRequest $refundRequest, User $seller, ?string $message = null): RefundRequest
@@ -125,7 +139,12 @@ class RefundService
                 ]);
             }
 
-            return $refundRequest->fresh()->load(['order.items', 'buyer', 'seller', 'orderItem']);
+            $fresh = $refundRequest->fresh()->load(['order.items', 'buyer', 'seller', 'orderItem']);
+            if ($refundRequest->buyer) {
+                $this->emails->queueApproved($fresh, $refundRequest->buyer);
+            }
+
+            return $fresh;
         });
     }
 
@@ -167,6 +186,11 @@ class RefundService
             ]);
         }
 
-        return $refundRequest->fresh()->load(['order', 'buyer', 'seller']);
+        $fresh = $refundRequest->fresh()->load(['order', 'buyer', 'seller']);
+        if ($refundRequest->buyer) {
+            $this->emails->queueRejected($fresh, $refundRequest->buyer);
+        }
+
+        return $fresh;
     }
 }

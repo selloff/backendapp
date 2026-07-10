@@ -14,3 +14,4 @@ Schedule::command('selloff:deactivate-expired-memberships')->dailyAt('08:15');
 Schedule::command('selloff:expire-membership-top-boosts')->dailyAt('08:30');
 Schedule::command('selloff:membership-auto-bump')->hourly();
 Schedule::command('selloff:escrow-process-releases')->hourly();
+Schedule::command('selloff:send-email-jobs')->everyMinute();

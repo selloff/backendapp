@@ -12,7 +12,11 @@ class EmailJob extends Model
     {
         return [
             'metadata' => 'array',
+            'template_data' => 'array',
             'sent_at' => 'datetime',
+            'scheduled_at' => 'datetime',
+            'skipped_at' => 'datetime',
+            'attempts' => 'integer',
         ];
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Modules\Selloff\Support\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Selloff\Notification\Services\ContactEmailService;
 use App\Modules\Selloff\Support\Http\Requests\Api\V1\StoreContactRequest;
 use App\Modules\Selloff\Support\Models\ContactMessage;
 use App\Support\ApiResponse;
@@ -10,6 +11,10 @@ use Illuminate\Http\JsonResponse;
 
 class ContactController extends Controller
 {
+    public function __construct(
+        private readonly ContactEmailService $contactEmails,
+    ) {}
+
     public function store(StoreContactRequest $request): JsonResponse
     {
         $data = $request->validated();
@@ -21,6 +26,8 @@ class ContactController extends Controller
             'message' => $data['message'],
             'status' => 'pending',
         ]);
+
+        $this->contactEmails->queueAdminAlert($contact);
 
         return ApiResponse::success([
             'id' => $contact->id,

@@ -5,11 +5,18 @@ namespace App\Services\Auth;
 use App\Models\EmailVerificationToken;
 use App\Models\User;
 use App\Modules\Selloff\Notification\Models\EmailJob;
+use App\Modules\Selloff\Notification\Services\TransactionalEmailService;
+use App\Modules\Selloff\Notification\Support\TransactionalEmailType;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class EmailVerificationService
 {
+    public function __construct(
+        private readonly TransactionalEmailService $email,
+        private readonly WelcomeEmailService $welcome,
+    ) {}
+
     public function issueToken(User $user): EmailVerificationToken
     {
         EmailVerificationToken::query()
@@ -24,22 +31,25 @@ class EmailVerificationService
         ]);
     }
 
-    public function queueVerificationEmail(User $user, EmailVerificationToken $token): EmailJob
+    public function queueVerificationEmail(User $user, EmailVerificationToken $token): ?EmailJob
     {
-        $confirmUrl = rtrim((string) config('app.spa_url', config('app.url')), '/')
+        $confirmUrl = rtrim((string) config('selloff.spa_url', config('app.url')), '/')
             .'/confirm-email?token='.$token->token;
 
-        return EmailJob::query()->create([
-            'to_email' => $user->email,
-            'subject' => 'Confirm your email address',
-            'body' => 'Please confirm your email by visiting: '.$confirmUrl,
-            'status' => 'pending',
-            'metadata' => [
-                'type' => 'email_verification',
+        return $this->email->queue(
+            TransactionalEmailType::ACTIVATION,
+            (string) $user->email,
+            [
+                'title' => 'Confirm your account',
+                'content' => 'Thanks for joining Selloff. Please confirm your email address to activate your account and start buying and selling securely.',
+                'url' => $confirmUrl,
+                'buttonText' => 'Confirm your account',
                 'user_id' => $user->id,
                 'token' => $token->token,
             ],
-        ]);
+            subject: 'Confirm your account',
+            template: 'main',
+        );
     }
 
     public function verify(string $token): User
@@ -56,9 +66,16 @@ class EmailVerificationService
         }
 
         $user = $record->user;
+        $alreadyVerified = $user->email_verified_at !== null;
         $user->update(['email_verified_at' => now()]);
         $record->update(['verified_at' => now()]);
 
-        return $user->fresh();
+        $fresh = $user->fresh();
+
+        if (! $alreadyVerified) {
+            $this->welcome->queue($fresh);
+        }
+
+        return $fresh;
     }
 }

@@ -27,12 +27,14 @@ uses()->beforeEach(function () {
 
 uses(TestCase::class)->in(
     'Unit/Support',
+    'Unit/User',
     'Unit/LegacyImport',
     'Unit/Modules/Selloff/Media',
     'Unit/Modules/Selloff/Payment',
     'Unit/Modules/Selloff/Catalog',
     'Unit/Modules/Selloff/Admin',
     'Unit/Modules/Selloff/Auth',
+    'Unit/Modules/Selloff/Notification',
 );
 
 uses()->in('Unit/Modules/Selloff/Shipping');

@@ -4,6 +4,7 @@ namespace App\Modules\Selloff\Promotion\Services;
 
 use App\Models\User;
 use App\Modules\Selloff\Catalog\Models\Product;
+use App\Modules\Selloff\Notification\Services\PromotionEmailService;
 use App\Modules\Selloff\Payment\Gateways\PaystackGateway;
 use App\Modules\Selloff\Payment\Models\WalletTransaction;
 use App\Modules\Selloff\Promotion\Models\PromotionTransaction;
@@ -23,6 +24,7 @@ class TopAdPromotionService
     public function __construct(
         private readonly PlatformSettingsService $settings,
         private readonly PaystackGateway $paystack,
+        private readonly PromotionEmailService $promotionEmails,
     ) {}
 
     /**
@@ -109,7 +111,7 @@ class TopAdPromotionService
             $product = $transaction->product;
             abort_if($product === null, 422, 'Product not found for TOP Ad transaction.');
 
-            $this->applyTopAdToProduct($product, $metadata);
+            $this->applyTopAdToProduct($product, $metadata, (float) $transaction->amount);
 
             return $transaction->fresh(['product.translations']);
         });
@@ -163,7 +165,7 @@ class TopAdPromotionService
     /**
      * @param  array<string, mixed>  $metadata
      */
-    public function applyTopAdToProduct(Product $product, array $metadata): Product
+    public function applyTopAdToProduct(Product $product, array $metadata, ?float $amount = null): Product
     {
         $durationDays = (int) ($metadata['duration_days'] ?? 0);
         $tierWeight = (int) ($metadata['rank_weight'] ?? 0);
@@ -188,7 +190,12 @@ class TopAdPromotionService
             'last_bumped_at' => now(),
         ])->save();
 
-        return $product->fresh();
+        $product = $product->fresh();
+        $resolvedAmount = (float) ($amount ?? $metadata['amount'] ?? 0);
+        $quote = array_merge(['currency_code' => $product->currency_code ?? 'NGN'], $metadata);
+        $this->promotionEmails->queueVipBoost($product, $quote, $resolvedAmount);
+
+        return $product;
     }
 
     private function assertTopAdTransaction(PromotionTransaction $transaction): void
@@ -335,7 +342,7 @@ class TopAdPromotionService
             $product = $transaction->product;
             abort_if($product === null, 422, 'Product not found for TOP Ad transaction.');
 
-            $this->applyTopAdToProduct($product, $metadata);
+            $this->applyTopAdToProduct($product, $metadata, (float) $transaction->amount);
             $transaction->update([
                 'status' => 'completed',
                 'payment_method' => 'wallet_balance',

@@ -4,16 +4,17 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\UpdatePlatformSettingsRequest;
+use App\Modules\Selloff\Notification\Services\PlatformMailService;
 use App\Services\Platform\PlatformSettingsService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Mail;
 
 class SettingsController extends Controller
 {
     public function __construct(
         private readonly PlatformSettingsService $settings,
+        private readonly PlatformMailService $mail,
     ) {}
 
     public function index(): JsonResponse
@@ -44,9 +45,7 @@ class SettingsController extends Controller
             'email' => ['required', 'email', 'max:255'],
         ]);
 
-        Mail::raw('This is a test email from Selloff.', function ($message) use ($validated): void {
-            $message->to($validated['email'])->subject('Selloff test email');
-        });
+        $this->mail->sendTestEmail($validated['email']);
 
         return ApiResponse::success(['sent' => true]);
     }

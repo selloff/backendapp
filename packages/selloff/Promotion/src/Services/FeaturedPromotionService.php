@@ -4,6 +4,7 @@ namespace App\Modules\Selloff\Promotion\Services;
 
 use App\Models\User;
 use App\Modules\Selloff\Catalog\Models\Product;
+use App\Modules\Selloff\Notification\Services\PromotionEmailService;
 use App\Modules\Selloff\Payment\Gateways\PaystackGateway;
 use App\Modules\Selloff\Payment\Models\WalletTransaction;
 use App\Modules\Selloff\Promotion\Models\PromotionTransaction;
@@ -17,6 +18,7 @@ class FeaturedPromotionService
     public function __construct(
         private readonly PlatformSettingsService $settings,
         private readonly PaystackGateway $paystack,
+        private readonly PromotionEmailService $promotionEmails,
     ) {}
 
     /**
@@ -101,7 +103,7 @@ class FeaturedPromotionService
             $product = $transaction->product;
             abort_if($product === null, 422, 'Product not found for promotion transaction.');
 
-            $this->applyPromotionToProduct($product, $metadata);
+            $this->applyPromotionToProduct($product, $metadata, (float) $transaction->amount);
 
             return $transaction->fresh(['product.translations']);
         });
@@ -116,7 +118,7 @@ class FeaturedPromotionService
 
         return DB::transaction(function () use ($transaction, $product) {
             $metadata = is_array($transaction->metadata) ? $transaction->metadata : [];
-            $this->applyPromotionToProduct($product, $metadata);
+            $this->applyPromotionToProduct($product, $metadata, (float) $transaction->amount);
             $transaction->update(['status' => 'completed']);
 
             return $transaction->fresh(['product.translations']);
@@ -192,7 +194,7 @@ class FeaturedPromotionService
             $product = $transaction->product;
             abort_if($product === null, 422, 'Product not found for promotion transaction.');
 
-            $this->applyPromotionToProduct($product, $metadata);
+            $this->applyPromotionToProduct($product, $metadata, (float) $transaction->amount);
             $transaction->update([
                 'status' => 'completed',
                 'payment_method' => 'wallet_balance',
@@ -362,7 +364,7 @@ class FeaturedPromotionService
     /**
      * @param  array<string, mixed>  $quote
      */
-    private function applyPromotionToProduct(Product $product, array $quote): void
+    private function applyPromotionToProduct(Product $product, array $quote, ?float $amount = null): void
     {
         $expiresAt = match (true) {
             isset($quote['expires_at']) && is_string($quote['expires_at']) => \Illuminate\Support\Carbon::parse($quote['expires_at']),
@@ -376,6 +378,10 @@ class FeaturedPromotionService
             'promoted_until' => $expiresAt,
             'promote_plan' => $quote['purchased_plan'] ?? null,
         ]);
+
+        $resolvedAmount = (float) ($amount ?? $quote['amount'] ?? 0);
+        $quoteWithCurrency = array_merge(['currency_code' => $product->currency_code ?? 'NGN'], $quote);
+        $this->promotionEmails->queueFeaturedPromotion($product->fresh(), $quoteWithCurrency, $resolvedAmount);
     }
 
     /**

@@ -3,9 +3,15 @@
 use App\Modules\Selloff\Notification\Http\Controllers\Api\V1\Admin\AdminNewsletterController;
 use App\Modules\Selloff\Notification\Http\Controllers\Api\V1\DeviceTokenController;
 use App\Modules\Selloff\Notification\Http\Controllers\Api\V1\NewsletterController;
+use App\Modules\Selloff\Notification\Http\Controllers\Api\V1\UserNotificationsController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth:sanctum')->prefix('notifications')->group(function (): void {
+    Route::get('/inbox', [UserNotificationsController::class, 'index']);
+    Route::get('/unread-count', [UserNotificationsController::class, 'unreadCount']);
+    Route::post('/read-all', [UserNotificationsController::class, 'markAllRead']);
+    Route::post('/{key}/read', [UserNotificationsController::class, 'markRead']);
+
     Route::post('/device-tokens', [DeviceTokenController::class, 'store']);
     Route::delete('/device-tokens/{token}', [DeviceTokenController::class, 'destroy'])
         ->where('token', '.*');

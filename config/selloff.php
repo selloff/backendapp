@@ -182,7 +182,12 @@ return [
         'mail_from_address' => '',
         'mail_from_name' => '',
         'mail_reply_to' => '',
-        'mail_service' => 'smtp',
+        'mail_service' => 'mailtrap',
+        'mailtrap_mode' => 'auto',
+        'mailtrap_sandbox_username' => '',
+        'mailtrap_sandbox_password' => '',
+        'mailtrap_sending_username' => '',
+        'mailtrap_sending_password' => '',
         'mail_protocol' => 'smtp',
         'mail_encryption' => 'tls',
         'smtp_host' => '',
@@ -202,6 +207,16 @@ return [
         'email_option_shop_opening_request' => true,
         'email_option_bidding_system' => true,
         'email_option_support_system' => true,
+        'email_option_welcome' => true,
+        'email_option_reset_password' => true,
+        'email_option_product_moderation' => true,
+        'email_option_new_message' => true,
+        'email_option_vendor_feedback' => true,
+        'email_option_membership_purchase' => true,
+        'email_option_membership_expiry' => true,
+        'email_option_promotion_applied' => true,
+        'email_option_refund' => true,
+        'email_option_escrow' => true,
         'mail_options_account' => '',
         'facebook_app_id' => '',
         'facebook_app_secret' => '',
@@ -264,6 +279,15 @@ return [
         'emphasis' => '#CE0000',
     ],
 
+    'mail' => [
+        'default_service' => env('MAIL_SERVICE', 'mailtrap'),
+        'mailtrap_mode' => env('MAILTRAP_MODE', 'auto'),
+        'mailtrap_sandbox_username' => env('MAILTRAP_SANDBOX_USERNAME'),
+        'mailtrap_sandbox_password' => env('MAILTRAP_SANDBOX_PASSWORD'),
+        'mailtrap_sending_username' => env('MAILTRAP_SENDING_USERNAME'),
+        'mailtrap_sending_password' => env('MAILTRAP_SENDING_PASSWORD'),
+    ],
+
     'homepage' => [
         'phone_category_slugs' => ['phones-and-tablets'],
         'laptop_category_slugs' => ['electronics/laptops-computers', 'laptops'],
@@ -290,6 +314,12 @@ return [
     'rate_limits' => [
         'api_per_minute' => (int) env('SELLOFF_API_RATE_LIMIT', 120),
         'auth_per_minute' => (int) env('SELLOFF_AUTH_RATE_LIMIT', 20),
+    ],
+
+    'presence' => [
+        // Legacy isUserOnline() used a 2-minute window.
+        'online_window_seconds' => (int) env('SELLOFF_PRESENCE_ONLINE_WINDOW', 120),
+        'db_write_throttle_seconds' => (int) env('SELLOFF_PRESENCE_DB_THROTTLE', 60),
     ],
 
     'security' => [

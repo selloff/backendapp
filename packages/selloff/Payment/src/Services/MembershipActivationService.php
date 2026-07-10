@@ -3,6 +3,7 @@
 namespace App\Modules\Selloff\Payment\Services;
 
 use App\Models\User;
+use App\Modules\Selloff\Notification\Services\MembershipEmailService;
 use App\Modules\Selloff\Payment\Models\MembershipPlan;
 use App\Modules\Selloff\Payment\Models\UserMembershipPlan;
 use Illuminate\Support\Carbon;
@@ -11,6 +12,7 @@ class MembershipActivationService
 {
     public function __construct(
         private readonly MembershipEntitlementService $entitlements,
+        private readonly MembershipEmailService $membershipEmails,
     ) {}
 
     public function activate(
@@ -67,10 +69,16 @@ class MembershipActivationService
                 'top_credits_period_ends_at' => $expiresAt,
             ])->save();
 
-            return $subscription->fresh(['membershipPlan.categoryLimits']);
+            $subscription = $subscription->fresh(['membershipPlan.categoryLimits']);
+            $this->membershipEmails->queueSubscribed($user, $plan, $subscription, $purchaseType, $months, $amountPaid);
+
+            return $subscription;
         }
 
-        return $this->entitlements->applySnapshot($subscription, $plan);
+        $subscription = $this->entitlements->applySnapshot($subscription, $plan);
+        $this->membershipEmails->queueSubscribed($user, $plan, $subscription, $purchaseType, $months, $amountPaid);
+
+        return $subscription;
     }
 
     /**

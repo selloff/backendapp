@@ -5,12 +5,16 @@ namespace App\Modules\Selloff\Escrow\Services;
 use App\Modules\Selloff\Escrow\Mail\EscrowStageMail;
 use App\Modules\Selloff\Escrow\Models\EscrowTransaction;
 use App\Modules\Selloff\Escrow\Support\EscrowMailStage;
-use Illuminate\Support\Facades\Mail;
+use App\Modules\Selloff\Notification\Services\EmailOptionGate;
+use App\Modules\Selloff\Notification\Services\PlatformMailService;
+use App\Modules\Selloff\Notification\Support\TransactionalEmailType;
 
 class EscrowNotificationService
 {
     public function __construct(
         private readonly EscrowMailViewDataFactory $mailData,
+        private readonly EmailOptionGate $gate,
+        private readonly PlatformMailService $mail,
     ) {}
 
     public function sendBuyerAgreement(EscrowTransaction $transaction): void
@@ -225,10 +229,10 @@ class EscrowNotificationService
 
     private function dispatch(string $to, \App\Modules\Selloff\Escrow\Support\EscrowMailViewData $data): void
     {
-        if ($to === '') {
+        if ($to === '' || ! $this->gate->isEnabled(TransactionalEmailType::ESCROW)) {
             return;
         }
 
-        Mail::to($to)->send(new EscrowStageMail($data));
+        $this->mail->sendMailable(new EscrowStageMail($data), $to);
     }
 }

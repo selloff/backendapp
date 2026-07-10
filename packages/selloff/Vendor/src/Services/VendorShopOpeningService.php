@@ -3,6 +3,7 @@
 namespace App\Modules\Selloff\Vendor\Services;
 
 use App\Models\User;
+use App\Modules\Selloff\Notification\Services\ShopOpeningEmailService;
 use App\Modules\Selloff\User\Models\VendorProfile;
 use App\Services\Platform\PlatformSettingsService;
 use Illuminate\Support\Str;
@@ -12,6 +13,7 @@ class VendorShopOpeningService
 {
     public function __construct(
         private readonly PlatformSettingsService $platformSettings,
+        private readonly ShopOpeningEmailService $emails,
     ) {}
 
     /**
@@ -99,6 +101,8 @@ class VendorShopOpeningService
                 'slug' => $slug,
             ],
         );
+
+        $this->emails->queueSubmitted($user->fresh());
 
         return [
             'is_active_shop_request' => 1,

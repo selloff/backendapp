@@ -2,10 +2,9 @@
 
 use App\Models\User;
 use App\Modules\Auth\Actions\SendPasswordResetLinkAction;
-use Illuminate\Auth\Notifications\ResetPassword;
-use Illuminate\Notifications\Messages\MailMessage;
+use App\Modules\Selloff\Notification\Mail\TransactionalMail;
+use App\Services\Auth\PasswordResetEmailService;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 
 beforeEach(function () {
@@ -15,7 +14,7 @@ beforeEach(function () {
 });
 
 test('forgot password sends spa reset link', function () {
-    Notification::fake();
+    Mail::fake();
 
     $this->postJson('/api/v1/auth/forgot-password', [
         'email' => 'buyer@selloff.test',
@@ -23,23 +22,23 @@ test('forgot password sends spa reset link', function () {
         ->assertOk()
         ->assertJsonPath('success', true);
 
-    Notification::assertSentTo(
-        User::query()->where('email', 'buyer@selloff.test')->firstOrFail(),
-        ResetPassword::class,
-        function (ResetPassword $notification): bool {
-            $message = $notification->toMail(User::query()->where('email', 'buyer@selloff.test')->firstOrFail());
+    Mail::assertSent(TransactionalMail::class, function (TransactionalMail $mail): bool {
+        $url = (string) ($mail->templateData['url'] ?? '');
 
-            return $message instanceof MailMessage
-                && str_contains((string) $message->actionUrl, 'https://staging.selloff.ng/reset-password?')
-                && str_contains((string) $message->actionUrl, 'email=buyer%40selloff.test');
-        },
-    );
+        return $mail->hasTo('buyer@selloff.test')
+            && $mail->template === 'main'
+            && $mail->mailSubject === 'Reset your Selloff password'
+            && str_contains($url, 'https://staging.selloff.ng/reset-password?')
+            && str_contains($url, 'email=buyer%40selloff.test');
+    });
 });
 
 test('forgot password returns service unavailable when mail transport fails', function () {
-    Password::shouldReceive('sendResetLink')
+    $mock = Mockery::mock(PasswordResetEmailService::class);
+    $mock->shouldReceive('send')
         ->once()
-        ->andThrow(new \RuntimeException('SMTP connection failed'));
+        ->andThrow(new RuntimeException('SMTP connection failed'));
+    app()->instance(PasswordResetEmailService::class, $mock);
 
     $this->postJson('/api/v1/auth/forgot-password', [
         'email' => 'buyer@selloff.test',
@@ -50,11 +49,17 @@ test('forgot password returns service unavailable when mail transport fails', fu
 });
 
 test('send password reset link action maps transport failures to status', function () {
-    Password::shouldReceive('sendResetLink')
+    $mock = Mockery::mock(PasswordResetEmailService::class);
+    $mock->shouldReceive('send')
         ->once()
-        ->andThrow(new \RuntimeException('SMTP connection failed'));
+        ->andThrow(new RuntimeException('SMTP connection failed'));
+    app()->instance(PasswordResetEmailService::class, $mock);
 
     $status = app(SendPasswordResetLinkAction::class)->execute('buyer@selloff.test');
 
     expect($status)->toBe(SendPasswordResetLinkAction::STATUS_MAIL_FAILED);
+});
+
+afterEach(function () {
+    Mockery::close();
 });

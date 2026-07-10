@@ -15,7 +15,10 @@ test('resolve reply from prefers platform contact email', function () {
         'mail_from_name' => 'Selloff Support',
     ]);
 
-    $service = new ContactMessageNotificationService($settings);
+    $service = new ContactMessageNotificationService(
+        $settings,
+        Mockery::mock(\App\Modules\Selloff\Notification\Services\PlatformMailService::class),
+    );
 
     expect($service->resolveReplyFrom())->toBe([
         'address' => 'support@selloff.ng',
@@ -33,7 +36,10 @@ test('resolve reply from falls back to config default', function () {
 
     config(['selloff.platform_settings.contact_email' => 'support@selloff.ng']);
 
-    $service = new ContactMessageNotificationService($settings);
+    $service = new ContactMessageNotificationService(
+        $settings,
+        Mockery::mock(\App\Modules\Selloff\Notification\Services\PlatformMailService::class),
+    );
 
     expect($service->resolveReplyFrom())->toBe([
         'address' => 'support@selloff.ng',
@@ -42,7 +48,10 @@ test('resolve reply from falls back to config default', function () {
 });
 
 test('build reply subject prefixes re once', function () {
-    $service = new ContactMessageNotificationService(Mockery::mock(PlatformSettingsService::class));
+    $service = new ContactMessageNotificationService(
+        Mockery::mock(PlatformSettingsService::class),
+        Mockery::mock(\App\Modules\Selloff\Notification\Services\PlatformMailService::class),
+    );
 
     $message = new ContactMessage([
         'subject' => 'Need help with my order',

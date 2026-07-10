@@ -3,6 +3,7 @@
 namespace App\Modules\Selloff\Support\Services;
 
 use App\Models\User;
+use App\Modules\Selloff\Notification\Services\PlatformMailService;
 use App\Modules\Selloff\Support\Models\ContactMessage;
 use App\Services\Platform\PlatformSettingsService;
 use Illuminate\Support\Facades\Mail;
@@ -11,7 +12,10 @@ use RuntimeException;
 
 class ContactMessageNotificationService
 {
-    public function __construct(private readonly PlatformSettingsService $settings) {}
+    public function __construct(
+        private readonly PlatformSettingsService $settings,
+        private readonly PlatformMailService $mail,
+    ) {}
 
     public function buildReplySubject(ContactMessage $contactMessage): string
     {
@@ -74,6 +78,8 @@ class ContactMessageNotificationService
             .trim((string) $contactMessage->message);
 
         try {
+            $this->mail->configureTransport();
+
             Mail::raw($body, function ($message) use ($to, $subject, $from): void {
                 $message->to($to)->subject($subject);
 

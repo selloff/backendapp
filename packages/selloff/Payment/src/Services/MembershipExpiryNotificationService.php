@@ -2,12 +2,19 @@
 
 namespace App\Modules\Selloff\Payment\Services;
 
+use App\Modules\Selloff\Notification\Services\EmailOptionGate;
+use App\Modules\Selloff\Notification\Services\TransactionalEmailService;
+use App\Modules\Selloff\Notification\Support\TransactionalEmailType;
 use App\Modules\Selloff\Payment\Models\UserMembershipPlan;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Mail;
 
 class MembershipExpiryNotificationService
 {
+    public function __construct(
+        private readonly TransactionalEmailService $email,
+        private readonly EmailOptionGate $gate,
+    ) {}
+
     public function notifyDueSubscriptions(int $lookbackDays = 2): int
     {
         $sent = 0;
@@ -27,7 +34,7 @@ class MembershipExpiryNotificationService
         $user = $subscription->user;
         $email = trim((string) ($user?->email ?? ''));
 
-        if ($email === '') {
+        if ($email === '' || ! $this->gate->isEnabled(TransactionalEmailType::MEMBERSHIP_EXPIRING)) {
             return false;
         }
 
@@ -36,11 +43,18 @@ class MembershipExpiryNotificationService
             ?? 'recently';
         $renewUrl = $this->renewUrl();
 
-        Mail::raw(
-            $this->buildBody($planTitle, $expiresAt, $renewUrl),
-            function ($message) use ($email, $planTitle): void {
-                $message->to($email)->subject("Your {$planTitle} membership has expired");
-            },
+        $this->email->sendNow(
+            TransactionalEmailType::MEMBERSHIP_EXPIRING,
+            $email,
+            [
+                'title' => 'Membership expired',
+                'planName' => $planTitle,
+                'expiresAt' => $expiresAt,
+                'renewUrl' => $renewUrl,
+                'buttonText' => 'Renew now',
+            ],
+            subject: "Your {$planTitle} membership has expired",
+            template: 'membership-expiry',
         );
 
         UserMembershipPlan::query()
@@ -77,20 +91,5 @@ class MembershipExpiryNotificationService
         $base = rtrim((string) config('selloff.spa_url', config('app.url')), '/');
 
         return "{$base}/vendor/membership/subscribe";
-    }
-
-    private function buildBody(string $planTitle, string $expiresAt, string $renewUrl): string
-    {
-        return implode("\n", [
-            'Hello,',
-            '',
-            "Your {$planTitle} membership expired on {$expiresAt}.",
-            'Renew your plan to continue enjoying vendor benefits such as listing products and promotions.',
-            '',
-            "Renew now: {$renewUrl}",
-            '',
-            'Thank you,',
-            'Selloff',
-        ]);
     }
 }

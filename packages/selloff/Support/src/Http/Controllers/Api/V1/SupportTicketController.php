@@ -3,6 +3,7 @@
 namespace App\Modules\Selloff\Support\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Selloff\Notification\Services\SupportEmailService;
 use App\Modules\Selloff\Support\Models\SupportMessage;
 use App\Modules\Selloff\Support\Models\SupportTicket;
 use App\Support\ApiResponse;
@@ -11,6 +12,10 @@ use Illuminate\Http\Request;
 
 class SupportTicketController extends Controller
 {
+    public function __construct(
+        private readonly SupportEmailService $supportEmails,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $tickets = SupportTicket::query()
@@ -42,12 +47,14 @@ class SupportTicketController extends Controller
             'status' => 'open',
         ]);
 
-        SupportMessage::query()->create([
+        $message = SupportMessage::query()->create([
             'support_ticket_id' => $ticket->id,
             'user_id' => $request->user()->id,
             'message' => $data['message'],
             'is_admin' => false,
         ]);
+
+        $this->supportEmails->queueTicketOpened($ticket, $message);
 
         return ApiResponse::success($ticket->fresh()->load('messages'), 201);
     }
@@ -60,12 +67,14 @@ class SupportTicketController extends Controller
             'message' => ['required', 'string', 'max:5000'],
         ]);
 
-        SupportMessage::query()->create([
+        $message = SupportMessage::query()->create([
             'support_ticket_id' => $supportTicket->id,
             'user_id' => $request->user()->id,
             'message' => $data['message'],
             'is_admin' => false,
         ]);
+
+        $this->supportEmails->queueUserReply($supportTicket, $message);
 
         return ApiResponse::success($supportTicket->fresh()->load('messages'));
     }

@@ -378,7 +378,18 @@ class PlatformSettingsLegacyImporter implements LegacyImporter
                         continue;
                     }
 
-                    $this->upsertPlatformSetting($context, $platformKey, (string) $bag[$legacyKey], 'email');
+                    $value = (string) $bag[$legacyKey];
+
+                    if ($platformKey === 'mail_service') {
+                        $value = match ($value) {
+                            'mailtrap' => 'mailtrap',
+                            'brevo' => 'brevo',
+                            'mailgun' => 'mailgun',
+                            default => 'smtp',
+                        };
+                    }
+
+                    $this->upsertPlatformSetting($context, $platformKey, $value, 'email');
                 }
             }
         }
@@ -394,6 +405,7 @@ class PlatformSettingsLegacyImporter implements LegacyImporter
                     'shop_opening_request' => 'email_option_shop_opening_request',
                     'bidding_system' => 'email_option_bidding_system',
                     'support_system' => 'email_option_support_system',
+                    // Post-migration toggles (welcome, refund, escrow, etc.) default from config/selloff.php.
                 ];
 
                 foreach ($optionMap as $legacyKey => $platformKey) {

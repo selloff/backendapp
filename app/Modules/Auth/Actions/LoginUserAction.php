@@ -4,6 +4,7 @@ namespace App\Modules\Auth\Actions;
 
 use App\Models\User;
 use App\Modules\Selloff\User\Services\RecordLoginActivityService;
+use App\Modules\Selloff\User\Services\UserPresenceService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
@@ -11,6 +12,7 @@ class LoginUserAction
 {
     public function __construct(
         private readonly RecordLoginActivityService $loginActivity,
+        private readonly UserPresenceService $presence,
     ) {}
 
     /**
@@ -42,6 +44,7 @@ class LoginUserAction
         $abilities = \App\Modules\Selloff\Admin\Support\AdminPinContext::loginAbilities($user);
         $token = $user->createToken($deviceName, $abilities)->plainTextToken;
         $this->loginActivity->record($user, $ipAddress, $userAgent);
+        $this->presence->recordActivity($user);
 
         return ['user' => $user, 'token' => $token];
     }
@@ -66,6 +69,7 @@ class LoginUserAction
         $abilities = \App\Modules\Selloff\Admin\Support\AdminPinContext::loginAbilities($user);
         $token = $user->createToken($deviceName, $abilities)->plainTextToken;
         $this->loginActivity->record($user, $ipAddress, $userAgent);
+        $this->presence->recordActivity($user);
 
         return ['user' => $user, 'token' => $token];
     }

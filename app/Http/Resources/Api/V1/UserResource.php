@@ -34,6 +34,7 @@ class UserResource extends JsonResource
             'referral_code' => $referralProfile?->referral_code,
             'referral_points' => (int) ($referralProfile?->referral_points ?? 0),
             'referral_program_enabled' => (bool) ($referralProgram['status'] ?? false),
+            'send_email_new_message' => (bool) ($this->send_email_new_message ?? true),
         ];
     }
 }
