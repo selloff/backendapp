@@ -56,9 +56,9 @@ jobs:
       - name: Ensure writable Laravel paths
         run: chmod -R 775 storage bootstrap/cache || true
 
-      - name: Run Pest
+      - name: Run tests
         env:
           APP_ENV: testing
           DB_CONNECTION: sqlite
           DB_DATABASE: ':memory:'
-        run: ./vendor/bin/pest --colors=never
+        run: php artisan test --colors=never
