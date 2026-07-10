@@ -1,34 +1,25 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\LegacyImport\Importers\AffiliateLegacyImporter;
 use App\LegacyImport\LegacyImportContext;
 use App\LegacyImport\MySqlDumpReader;
 use Illuminate\Support\Facades\DB;
-use Tests\TestCase;
 
-class AffiliateLegacyImporterTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('imports affiliate links and earnings', function () {
+    $referrerId = (int) DB::table('users')->value('id');
+    $sellerId = (int) DB::table('users')->orderByDesc('id')->value('id');
+    $productId = (int) DB::table('products')->value('id');
+    $orderId = (int) DB::table('orders')->value('id');
+    $languageId = (int) DB::table('languages')->value('id');
 
-    public function test_imports_affiliate_links_and_earnings(): void
-    {
-        $referrerId = (int) DB::table('users')->value('id');
-        $sellerId = (int) DB::table('users')->orderByDesc('id')->value('id');
-        $productId = (int) DB::table('products')->value('id');
-        $orderId = (int) DB::table('orders')->value('id');
-        $languageId = (int) DB::table('languages')->value('id');
+    expect($orderId)->not->toBeNull('Demo seed should include at least one order.');
 
-        $this->assertNotNull($orderId, 'Demo seed should include at least one order.');
-
-        $dumpPath = storage_path('app/test-affiliate-import.sql');
-        file_put_contents($dumpPath, <<<'SQL'
+    $dumpPath = storage_path('app/test-affiliate-import.sql');
+    file_put_contents($dumpPath, <<<'SQL'
 CREATE TABLE `affiliate_links` (
   `id` int NOT NULL,
   `referrer_id` int DEFAULT NULL,
@@ -61,36 +52,35 @@ VALUES
 (1,21323,501,10338,28,5,12.50,'NGN',1.0,'2025-09-27 10:00:00');
 SQL);
 
-        $context = new LegacyImportContext(dryRun: false);
-        $context->rememberMap('users', 21323, 'users', $referrerId);
-        $context->rememberMap('users', 28, 'users', $sellerId);
-        $context->rememberMap('products', 10338, 'products', $productId);
-        $context->rememberMap('orders', 501, 'orders', $orderId);
-        $context->rememberMap('languages', 1, 'languages', $languageId);
+    $context = new LegacyImportContext(dryRun: false);
+    $context->rememberMap('users', 21323, 'users', $referrerId);
+    $context->rememberMap('users', 28, 'users', $sellerId);
+    $context->rememberMap('products', 10338, 'products', $productId);
+    $context->rememberMap('orders', 501, 'orders', $orderId);
+    $context->rememberMap('languages', 1, 'languages', $languageId);
 
-        app(AffiliateLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
+    app(AffiliateLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
 
-        $this->assertDatabaseHas('affiliate_links', [
-            'id' => 1,
-            'referrer_id' => $referrerId,
-            'product_id' => $productId,
-            'seller_id' => $sellerId,
-            'language_id' => $languageId,
-            'link_short' => '68d6ec4fb5a54',
-            'legacy_id' => 1,
-        ]);
+    $this->assertDatabaseHas('affiliate_links', [
+        'id' => 1,
+        'referrer_id' => $referrerId,
+        'product_id' => $productId,
+        'seller_id' => $sellerId,
+        'language_id' => $languageId,
+        'link_short' => '68d6ec4fb5a54',
+        'legacy_id' => 1,
+    ]);
 
-        $this->assertDatabaseHas('affiliate_earnings', [
-            'id' => 1,
-            'referrer_id' => $referrerId,
-            'order_id' => $orderId,
-            'product_id' => $productId,
-            'seller_id' => $sellerId,
-            'earned_amount' => '12.50',
-            'currency_code' => 'NGN',
-            'legacy_id' => 1,
-        ]);
+    $this->assertDatabaseHas('affiliate_earnings', [
+        'id' => 1,
+        'referrer_id' => $referrerId,
+        'order_id' => $orderId,
+        'product_id' => $productId,
+        'seller_id' => $sellerId,
+        'earned_amount' => '12.50',
+        'currency_code' => 'NGN',
+        'legacy_id' => 1,
+    ]);
 
-        @unlink($dumpPath);
-    }
-}
+    @unlink($dumpPath);
+});

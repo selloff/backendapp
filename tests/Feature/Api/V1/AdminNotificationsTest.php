@@ -1,231 +1,209 @@
 <?php
 
-namespace Tests\Feature\Api\V1;
-
 use App\Models\User;
 use App\Modules\Selloff\Admin\Models\AdminNotificationRead;
 use App\Modules\Selloff\Catalog\Models\Product;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Role;
-use Tests\TestCase;
 
-class AdminNotificationsTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('admin notifications require authentication', function () {
+    $this->getJson('/api/v1/admin/notifications')->assertUnauthorized();
+});
 
-    public function test_admin_notifications_require_authentication(): void
-    {
-        $this->getJson('/api/v1/admin/notifications')->assertUnauthorized();
-    }
+test('admin notifications return grouped pending items', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $pending = Product::query()->where('sku', 'DEMO-PENDING-1')->firstOrFail();
+    Sanctum::actingAs($admin);
 
-    public function test_admin_notifications_return_grouped_pending_items(): void
-    {
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        $pending = Product::query()->where('sku', 'DEMO-PENDING-1')->firstOrFail();
-        Sanctum::actingAs($admin);
-
-        $response = $this->getJson('/api/v1/admin/notifications')
-            ->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonStructure([
-                'data' => [
-                    'unread_count',
-                    'groups' => [
-                        '*' => [
-                            'type',
-                            'label',
-                            'list_url',
-                            'unread_count',
-                            'total_count',
-                            'items' => [
-                                '*' => [
-                                    'key',
-                                    'title',
-                                    'body',
-                                    'created_at',
-                                    'is_read',
-                                    'action_url',
-                                ],
+    $response = $this->getJson('/api/v1/admin/notifications')
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonStructure([
+            'data' => [
+                'unread_count',
+                'groups' => [
+                    '*' => [
+                        'type',
+                        'label',
+                        'list_url',
+                        'unread_count',
+                        'total_count',
+                        'items' => [
+                            '*' => [
+                                'key',
+                                'title',
+                                'body',
+                                'created_at',
+                                'is_read',
+                                'action_url',
                             ],
                         ],
                     ],
                 ],
-            ]);
-
-        $pendingGroup = collect($response->json('data.groups'))
-            ->firstWhere('type', 'pending_product');
-
-        $this->assertNotNull($pendingGroup);
-        $this->assertSame(
-            'pending_product:'.$pending->id,
-            collect($pendingGroup['items'])->pluck('key')->first(),
-        );
-        $this->assertGreaterThanOrEqual(1, $response->json('data.unread_count'));
-    }
-
-    public function test_pending_products_group_appears_first(): void
-    {
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        Sanctum::actingAs($admin);
-
-        $types = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
-            ->pluck('type')
-            ->values()
-            ->all();
-
-        $pendingIndex = array_search('pending_product', $types, true);
-        $editedIndex = array_search('edited_product', $types, true);
-
-        $this->assertNotFalse($pendingIndex);
-        if ($editedIndex !== false) {
-            $this->assertLessThan($editedIndex, $pendingIndex);
-        }
-    }
-
-    public function test_group_total_count_covers_full_queue_not_only_visible_items(): void
-    {
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        Sanctum::actingAs($admin);
-
-        $pendingGroup = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
-            ->firstWhere('type', 'pending_product');
-
-        $this->assertNotNull($pendingGroup);
-        $this->assertGreaterThanOrEqual(count($pendingGroup['items']), $pendingGroup['total_count']);
-        $this->assertSame($pendingGroup['unread_count'], count($pendingGroup['items']));
-        foreach ($pendingGroup['items'] as $item) {
-            $this->assertFalse($item['is_read']);
-        }
-    }
-
-    public function test_mark_read_removes_item_from_dropdown_list(): void
-    {
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        $pending = Product::query()->where('sku', 'DEMO-PENDING-1')->firstOrFail();
-        Sanctum::actingAs($admin);
-
-        $key = 'pending_product:'.$pending->id;
-        $before = $this->getJson('/api/v1/admin/notifications')->json('data.unread_count');
-
-        $this->postJson('/api/v1/admin/notifications/'.rawurlencode($key).'/read')
-            ->assertOk()
-            ->assertJsonPath('success', true);
-
-        $this->assertDatabaseHas('admin_notification_reads', [
-            'notification_key' => $key,
-            'read_by_user_id' => $admin->id,
+            ],
         ]);
 
-        $after = $this->getJson('/api/v1/admin/notifications')->json('data.unread_count');
-        $this->assertSame($before - 1, $after);
+    $pendingGroup = collect($response->json('data.groups'))
+        ->firstWhere('type', 'pending_product');
 
-        $response = $this->getJson('/api/v1/admin/notifications')->assertOk();
-        $keys = collect($response->json('data.groups'))
-            ->flatMap(fn (array $group): array => $group['items'])
-            ->pluck('key');
+    expect($pendingGroup)->not->toBeNull();
+    expect(collect($pendingGroup['items'])->pluck('key'))->toContain('pending_product:'.$pending->id);
+    expect($response->json('data.unread_count'))->toBeGreaterThanOrEqual(1);
+});
 
-        $this->assertFalse($keys->contains($key));
+test('pending products group appears first', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    Sanctum::actingAs($admin);
+
+    $types = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
+        ->pluck('type')
+        ->values()
+        ->all();
+
+    $pendingIndex = array_search('pending_product', $types, true);
+    $editedIndex = array_search('edited_product', $types, true);
+
+    $this->assertNotFalse($pendingIndex);
+    if ($editedIndex !== false) {
+        expect($pendingIndex)->toBeLessThan($editedIndex);
     }
+});
 
-    public function test_shared_read_state_hides_item_for_all_admins(): void
-    {
-        $adminA = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        $role = Role::query()->firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
-        $adminB = User::query()->create([
-            'first_name' => 'Second',
-            'last_name' => 'Admin',
-            'slug' => 'second-admin-notifications',
-            'email' => 'second-admin-notifications@selloff.test',
-            'password' => Hash::make('password'),
-            'is_enable_login' => true,
-            'is_disable' => false,
-            'email_verified_at' => now(),
-        ]);
-        $adminB->syncRoles([$role]);
-        $pending = Product::query()->where('sku', 'DEMO-PENDING-1')->firstOrFail();
-        $key = 'pending_product:'.$pending->id;
+test('group total count covers full queue not only visible items', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    Sanctum::actingAs($admin);
 
-        Sanctum::actingAs($adminA);
-        $this->postJson('/api/v1/admin/notifications/'.rawurlencode($key).'/read')->assertOk();
+    $pendingGroup = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
+        ->firstWhere('type', 'pending_product');
 
-        Sanctum::actingAs($adminB);
-        $keys = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
-            ->flatMap(fn (array $group): array => $group['items'])
-            ->pluck('key');
-
-        $this->assertFalse($keys->contains($key));
-        $this->assertSame(1, AdminNotificationRead::query()->where('notification_key', $key)->count());
+    expect($pendingGroup)->not->toBeNull();
+    expect($pendingGroup['total_count'])->toBeGreaterThanOrEqual(count($pendingGroup['items']));
+    expect(count($pendingGroup['items']))->toBe($pendingGroup['unread_count']);
+    foreach ($pendingGroup['items'] as $item) {
+        expect($item['is_read'])->toBeFalse();
     }
+});
 
-    public function test_limited_admin_omits_gated_notification_types(): void
-    {
-        $role = Role::query()->firstOrCreate(['name' => 'products-only-notifications', 'guard_name' => 'web']);
-        $role->syncPermissions(['admin_panel', 'products']);
+test('mark read removes item from dropdown list', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $pending = Product::query()->where('sku', 'DEMO-PENDING-1')->firstOrFail();
+    Sanctum::actingAs($admin);
 
-        $user = User::query()->create([
-            'first_name' => 'Products',
-            'last_name' => 'Only',
-            'slug' => 'products-only-notifications',
-            'email' => 'products-only-notifications@selloff.test',
-            'password' => Hash::make('password'),
-            'is_enable_login' => true,
-            'is_disable' => false,
-            'email_verified_at' => now(),
-        ]);
-        $user->syncRoles([$role]);
+    $key = 'pending_product:'.$pending->id;
+    $before = $this->getJson('/api/v1/admin/notifications')->json('data.unread_count');
 
-        Sanctum::actingAs($user);
+    $this->postJson('/api/v1/admin/notifications/'.rawurlencode($key).'/read')
+        ->assertOk()
+        ->assertJsonPath('success', true);
 
-        $types = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
-            ->pluck('type');
+    $this->assertDatabaseHas('admin_notification_reads', [
+        'notification_key' => $key,
+        'read_by_user_id' => $admin->id,
+    ]);
 
-        $this->assertTrue($types->contains('pending_product'));
-        $this->assertFalse($types->contains('abuse_report'));
-    }
+    $after = $this->getJson('/api/v1/admin/notifications')->json('data.unread_count');
+    expect($after)->toBe($before - 1);
 
-    public function test_mark_read_returns_not_found_for_invalid_key(): void
-    {
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        Sanctum::actingAs($admin);
+    $response = $this->getJson('/api/v1/admin/notifications')->assertOk();
+    $keys = collect($response->json('data.groups'))
+        ->flatMap(fn (array $group): array => $group['items'])
+        ->pluck('key');
 
-        $this->postJson('/api/v1/admin/notifications/not-a-valid-key/read')
-            ->assertNotFound();
-    }
+    expect($keys->contains($key))->toBeFalse();
+});
 
-    public function test_unread_count_endpoint_returns_count(): void
-    {
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        Sanctum::actingAs($admin);
+test('shared read state hides item for all admins', function () {
+    $adminA = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $role = Role::query()->firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    $adminB = User::query()->create([
+        'first_name' => 'Second',
+        'last_name' => 'Admin',
+        'slug' => 'second-admin-notifications',
+        'email' => 'second-admin-notifications@selloff.test',
+        'password' => Hash::make('password'),
+        'is_enable_login' => true,
+        'is_disable' => false,
+        'email_verified_at' => now(),
+    ]);
+    $adminB->syncRoles([$role]);
+    $pending = Product::query()->where('sku', 'DEMO-PENDING-1')->firstOrFail();
+    $key = 'pending_product:'.$pending->id;
 
-        $listCount = $this->getJson('/api/v1/admin/notifications')->json('data.unread_count');
-        $badgeCount = $this->getJson('/api/v1/admin/notifications/unread-count')
-            ->assertOk()
-            ->json('data.count');
+    Sanctum::actingAs($adminA);
+    $this->postJson('/api/v1/admin/notifications/'.rawurlencode($key).'/read')->assertOk();
 
-        $this->assertSame($listCount, $badgeCount);
-    }
+    Sanctum::actingAs($adminB);
+    $keys = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
+        ->flatMap(fn (array $group): array => $group['items'])
+        ->pluck('key');
 
-    public function test_mark_all_read_marks_visible_notifications(): void
-    {
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        Sanctum::actingAs($admin);
+    expect($keys->contains($key))->toBeFalse();
+    expect(AdminNotificationRead::query()->where('notification_key', $key)->count())->toBe(1);
+});
 
-        $before = $this->getJson('/api/v1/admin/notifications')->json('data.unread_count');
-        $this->assertGreaterThan(0, $before);
+test('limited admin omits gated notification types', function () {
+    $role = Role::query()->firstOrCreate(['name' => 'products-only-notifications', 'guard_name' => 'web']);
+    $role->syncPermissions(['admin_panel', 'products']);
 
-        $this->postJson('/api/v1/admin/notifications/read-all')
-            ->assertOk()
-            ->assertJsonPath('success', true);
+    $user = User::query()->create([
+        'first_name' => 'Products',
+        'last_name' => 'Only',
+        'slug' => 'products-only-notifications',
+        'email' => 'products-only-notifications@selloff.test',
+        'password' => Hash::make('password'),
+        'is_enable_login' => true,
+        'is_disable' => false,
+        'email_verified_at' => now(),
+    ]);
+    $user->syncRoles([$role]);
 
-        $this->getJson('/api/v1/admin/notifications')
-            ->assertOk()
-            ->assertJsonPath('data.unread_count', 0)
-            ->assertJsonPath('data.groups', []);
-    }
-}
+    Sanctum::actingAs($user);
+
+    $types = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
+        ->pluck('type');
+
+    expect($types->contains('pending_product'))->toBeTrue();
+    expect($types->contains('abuse_report'))->toBeFalse();
+});
+
+test('mark read returns not found for invalid key', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    Sanctum::actingAs($admin);
+
+    $this->postJson('/api/v1/admin/notifications/not-a-valid-key/read')
+        ->assertNotFound();
+});
+
+test('unread count endpoint returns count', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    Sanctum::actingAs($admin);
+
+    $listCount = $this->getJson('/api/v1/admin/notifications')->json('data.unread_count');
+    $badgeCount = $this->getJson('/api/v1/admin/notifications/unread-count')
+        ->assertOk()
+        ->json('data.count');
+
+    expect($badgeCount)->toBe($listCount);
+});
+
+test('mark all read marks visible notifications', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    Sanctum::actingAs($admin);
+
+    $before = $this->getJson('/api/v1/admin/notifications')->json('data.unread_count');
+    expect($before)->toBeGreaterThan(0);
+
+    $this->postJson('/api/v1/admin/notifications/read-all')
+        ->assertOk()
+        ->assertJsonPath('success', true);
+
+    $this->getJson('/api/v1/admin/notifications')
+        ->assertOk()
+        ->assertJsonPath('data.unread_count', 0)
+        ->assertJsonPath('data.groups', []);
+});

@@ -61,6 +61,7 @@ Mobile API tests:
 
 ```bash
 php artisan test --filter=Pass9MobileApiTest
+# or: ./vendor/bin/pest --filter=Pass9MobileApiTest
 ```
 
 Legacy import (Pass 10):
@@ -68,15 +69,16 @@ Legacy import (Pass 10):
 ```bash
 php artisan selloff:import-legacy-data --source=tests/fixtures/legacy-subset.sql --dry-run
 php artisan test --filter=Pass10
+# or: ./vendor/bin/pest --filter=Pass10
 ```
 
 ## Key commands
 
 | Command | Purpose |
 |---------|---------|
+| `./vendor/bin/pest` or `composer test` | Pest test suite (SQLite in-memory in CI) |
 | `php artisan selloff:migrate` | Platform + package migrations in FK order |
 | `php artisan selloff:migrate --fresh --seed` | Full reset + seeders |
-| `php artisan test` | PHPUnit |
 
 ## Docs
 

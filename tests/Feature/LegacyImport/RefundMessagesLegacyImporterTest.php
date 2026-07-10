@@ -1,30 +1,21 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\LegacyImport\Importers\RefundRequestsLegacyImporter;
 use App\LegacyImport\LegacyImportContext;
 use App\LegacyImport\MySqlDumpReader;
 use Illuminate\Support\Facades\DB;
-use Tests\TestCase;
 
-class RefundMessagesLegacyImporterTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('imports refund request messages', function () {
+    $buyerId = (int) DB::table('users')->value('id');
+    $sellerId = (int) DB::table('users')->orderByDesc('id')->value('id');
+    $orderId = (int) DB::table('orders')->value('id');
 
-    public function test_imports_refund_request_messages(): void
-    {
-        $buyerId = (int) DB::table('users')->value('id');
-        $sellerId = (int) DB::table('users')->orderByDesc('id')->value('id');
-        $orderId = (int) DB::table('orders')->value('id');
-
-        $dumpPath = storage_path('app/test-refund-messages-import.sql');
-        file_put_contents($dumpPath, <<<'SQL'
+    $dumpPath = storage_path('app/test-refund-messages-import.sql');
+    file_put_contents($dumpPath, <<<'SQL'
 CREATE TABLE `refund_requests` (
   `id` int NOT NULL,
   `order_id` int DEFAULT NULL,
@@ -55,31 +46,30 @@ VALUES
 (2,10,200,0,'We will review your request','2024-06-01 12:00:00');
 SQL);
 
-        $context = new LegacyImportContext(dryRun: false);
-        $context->rememberMap('users', 100, 'users', $buyerId);
-        $context->rememberMap('users', 200, 'users', $sellerId);
-        $context->rememberMap('orders', 300, 'orders', $orderId);
+    $context = new LegacyImportContext(dryRun: false);
+    $context->rememberMap('users', 100, 'users', $buyerId);
+    $context->rememberMap('users', 200, 'users', $sellerId);
+    $context->rememberMap('orders', 300, 'orders', $orderId);
 
-        app(RefundRequestsLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
+    app(RefundRequestsLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
 
-        $this->assertDatabaseHas('refund_messages', [
-            'id' => 1,
-            'refund_request_id' => 10,
-            'user_id' => $buyerId,
-            'is_admin' => false,
-            'message' => 'Please refund this order',
-            'legacy_id' => 1,
-        ]);
+    $this->assertDatabaseHas('refund_messages', [
+        'id' => 1,
+        'refund_request_id' => 10,
+        'user_id' => $buyerId,
+        'is_admin' => false,
+        'message' => 'Please refund this order',
+        'legacy_id' => 1,
+    ]);
 
-        $this->assertDatabaseHas('refund_messages', [
-            'id' => 2,
-            'refund_request_id' => 10,
-            'user_id' => $sellerId,
-            'is_admin' => true,
-            'message' => 'We will review your request',
-            'legacy_id' => 2,
-        ]);
+    $this->assertDatabaseHas('refund_messages', [
+        'id' => 2,
+        'refund_request_id' => 10,
+        'user_id' => $sellerId,
+        'is_admin' => true,
+        'message' => 'We will review your request',
+        'legacy_id' => 2,
+    ]);
 
-        @unlink($dumpPath);
-    }
-}
+    @unlink($dumpPath);
+});

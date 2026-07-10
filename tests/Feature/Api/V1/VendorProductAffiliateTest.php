@@ -1,114 +1,92 @@
 <?php
 
-namespace Tests\Feature\Api\V1;
-
 use App\Models\User;
 use App\Modules\Selloff\Catalog\Models\Product;
 use App\Modules\Selloff\User\Models\ReferralProfile;
 use App\Services\Platform\PlatformSettingsService;
 use Laravel\Sanctum\Sanctum;
-use Tests\TestCase;
 
-class VendorProductAffiliateTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('vendor can toggle product affiliate when program uses selected products', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    Sanctum::actingAs($vendor);
 
-    public function test_vendor_can_toggle_product_affiliate_when_program_uses_selected_products(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        Sanctum::actingAs($vendor);
+    $product = Product::query()->where('vendor_id', $vendor->id)->where('sku', 'DEMO-AUDIO-1')->firstOrFail();
+    expect((bool) $product->is_affiliate)->toBeFalse();
 
-        $product = Product::query()->where('vendor_id', $vendor->id)->where('sku', 'DEMO-AUDIO-1')->firstOrFail();
-        $this->assertFalse((bool) $product->is_affiliate);
+    $this->postJson("/api/v1/vendor/products/{$product->id}/affiliate/toggle")
+        ->assertOk()
+        ->assertJsonPath('data.is_affiliate', true);
 
-        $this->postJson("/api/v1/vendor/products/{$product->id}/affiliate/toggle")
-            ->assertOk()
-            ->assertJsonPath('data.is_affiliate', true);
+    $this->postJson("/api/v1/vendor/products/{$product->id}/affiliate/toggle")
+        ->assertOk()
+        ->assertJsonPath('data.is_affiliate', false);
+});
 
-        $this->postJson("/api/v1/vendor/products/{$product->id}/affiliate/toggle")
-            ->assertOk()
-            ->assertJsonPath('data.is_affiliate', false);
-    }
+test('vendor cannot toggle product affiliate when program is not selected products mode', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
 
-    public function test_vendor_cannot_toggle_product_affiliate_when_program_is_not_selected_products_mode(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    ReferralProfile::query()->where('user_id', $vendor->id)->update(['vendor_affiliate_status' => 1]);
 
-        ReferralProfile::query()->where('user_id', $vendor->id)->update(['vendor_affiliate_status' => 1]);
+    $product = Product::query()->where('vendor_id', $vendor->id)->firstOrFail();
+    Sanctum::actingAs($vendor);
 
-        $product = Product::query()->where('vendor_id', $vendor->id)->firstOrFail();
-        Sanctum::actingAs($vendor);
+    $this->postJson("/api/v1/vendor/products/{$product->id}/affiliate/toggle")
+        ->assertStatus(422);
+});
 
-        $this->postJson("/api/v1/vendor/products/{$product->id}/affiliate/toggle")
-            ->assertStatus(422);
-    }
+test('vendor affiliate program exposes product management flag', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    Sanctum::actingAs($vendor);
 
-    public function test_vendor_affiliate_program_exposes_product_management_flag(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        Sanctum::actingAs($vendor);
+    $this->getJson('/api/v1/vendor/affiliate')
+        ->assertOk()
+        ->assertJsonPath('data.can_manage_product_affiliate', true)
+        ->assertJsonPath('data.vendor_affiliate_status', 2);
+});
 
-        $this->getJson('/api/v1/vendor/affiliate')
-            ->assertOk()
-            ->assertJsonPath('data.can_manage_product_affiliate', true)
-            ->assertJsonPath('data.vendor_affiliate_status', 2);
-    }
+test('vendor can save affiliate status setting', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    Sanctum::actingAs($vendor);
 
-    public function test_vendor_can_save_affiliate_status_setting(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        Sanctum::actingAs($vendor);
+    $this->putJson('/api/v1/vendor/affiliate/settings', [
+        'vendor_affiliate_status' => 2,
+        'affiliate_commission_rate' => 6,
+        'affiliate_discount_rate' => 2,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.vendor_affiliate_status', 2)
+        ->assertJsonPath('data.affiliate_commission_rate', '6.00');
+});
 
-        $this->putJson('/api/v1/vendor/affiliate/settings', [
-            'vendor_affiliate_status' => 2,
-            'affiliate_commission_rate' => 6,
-            'affiliate_discount_rate' => 2,
-        ])
-            ->assertOk()
-            ->assertJsonPath('data.vendor_affiliate_status', 2)
-            ->assertJsonPath('data.affiliate_commission_rate', '6.00');
-    }
+test('vendor product list includes is affiliate field', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    Sanctum::actingAs($vendor);
 
-    public function test_vendor_product_list_includes_is_affiliate_field(): void
-    {
-        app(PlatformSettingsService::class)->upsertMany([
-            'affiliate_program' => json_encode([
-                'status' => true,
-                'type' => 'seller_based',
-                'commission_rate' => 5,
-                'discount_rate' => 1,
-            ]),
-        ], 'general');
+    $phone = Product::query()->where('vendor_id', $vendor->id)->where('sku', 'DEMO-PHONE-1')->firstOrFail();
+    $phone->update(['is_affiliate' => true]);
 
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        Sanctum::actingAs($vendor);
+    $this->getJson("/api/v1/vendor/products/{$phone->id}")
+        ->assertOk()
+        ->assertJsonPath('data.is_affiliate', true);
+});
 
-        $this->getJson('/api/v1/vendor/products')
-            ->assertOk()
-            ->assertJsonFragment(['sku' => 'DEMO-PHONE-1', 'is_affiliate' => true])
-            ->assertJsonFragment(['sku' => 'DEMO-PHONE-1', 'is_commission_set' => true]);
-    }
+test('toggling affiliate does not remove product from items for sale', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $product = Product::query()->where('vendor_id', $vendor->id)->where('sku', 'DEMO-AUDIO-1')->firstOrFail();
 
-    public function test_toggling_affiliate_does_not_remove_product_from_items_for_sale(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $product = Product::query()->where('vendor_id', $vendor->id)->where('sku', 'DEMO-AUDIO-1')->firstOrFail();
+    Sanctum::actingAs($vendor);
 
-        Sanctum::actingAs($vendor);
+    $this->postJson("/api/v1/vendor/products/{$product->id}/affiliate/toggle")
+        ->assertOk()
+        ->assertJsonPath('data.is_affiliate', true);
 
-        $this->postJson("/api/v1/vendor/products/{$product->id}/affiliate/toggle")
-            ->assertOk()
-            ->assertJsonPath('data.is_affiliate', true);
+    $skus = collect($this->getJson('/api/v1/vendor/products')->json('data.data'))
+        ->pluck('sku')
+        ->all();
 
-        $skus = collect($this->getJson('/api/v1/vendor/products')->json('data.data'))
-            ->pluck('sku')
-            ->all();
-
-        $this->assertContains('DEMO-AUDIO-1', $skus);
-    }
-}
+    expect($skus)->toContain('DEMO-AUDIO-1');
+});

@@ -1,30 +1,21 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\LegacyImport\Importers\FeedbacksLegacyImporter;
 use App\LegacyImport\LegacyImportContext;
 use App\LegacyImport\MySqlDumpReader;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
-use Tests\TestCase;
 
-class FeedbacksLegacyImporterTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('imports legacy feedbacks as approved', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
 
-    public function test_imports_legacy_feedbacks_as_approved(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-
-        $dumpPath = storage_path('app/test-feedbacks-import.sql');
-        file_put_contents($dumpPath, <<<'SQL'
+    $dumpPath = storage_path('app/test-feedbacks-import.sql');
+    file_put_contents($dumpPath, <<<'SQL'
 CREATE TABLE `feedbacks` (
   `id` int NOT NULL,
   `vendor_id` int NOT NULL,
@@ -42,22 +33,21 @@ VALUES
 (9001, 1, 2, 5, 'positive', NULL, 'Legacy imported positive feedback.', '2024-01-01 10:00:00', '2024-01-01 10:00:00');
 SQL);
 
-        $context = new LegacyImportContext(dryRun: false, tableFilter: 'feedbacks');
-        $context->rememberMap('users', 1, 'users', $vendor->id);
-        $context->rememberMap('users', 2, 'users', $buyer->id);
+    $context = new LegacyImportContext(dryRun: false, tableFilter: 'feedbacks');
+    $context->rememberMap('users', 1, 'users', $vendor->id);
+    $context->rememberMap('users', 2, 'users', $buyer->id);
 
-        DB::table('feedbacks')->where('vendor_id', $vendor->id)->where('user_id', $buyer->id)->delete();
-        DB::table('feedbacks')->where('id', 9001)->delete();
+    DB::table('feedbacks')->where('vendor_id', $vendor->id)->where('user_id', $buyer->id)->delete();
+    DB::table('feedbacks')->where('id', 9001)->delete();
 
-        app(FeedbacksLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
+    app(FeedbacksLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
 
-        $row = DB::table('feedbacks')->where('id', 9001)->first();
-        $this->assertNotNull($row);
-        $this->assertSame('approved', $row->moderation_status);
-        $this->assertSame('positive', $row->feedback_type);
-        $this->assertSame((int) $vendor->id, (int) $row->vendor_id);
-        $this->assertSame((int) $buyer->id, (int) $row->user_id);
+    $row = DB::table('feedbacks')->where('id', 9001)->first();
+    expect($row)->not->toBeNull();
+    expect($row->moderation_status)->toBe('approved');
+    expect($row->feedback_type)->toBe('positive');
+    expect((int) $row->vendor_id)->toBe((int) $vendor->id);
+    expect((int) $row->user_id)->toBe((int) $buyer->id);
 
-        @unlink($dumpPath);
-    }
-}
+    @unlink($dumpPath);
+});

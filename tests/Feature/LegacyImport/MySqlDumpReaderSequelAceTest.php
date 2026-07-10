@@ -1,16 +1,10 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\LegacyImport\MySqlDumpReader;
-use Tests\TestCase;
 
-class MySqlDumpReaderSequelAceTest extends TestCase
-{
-    public function test_parses_sequel_ace_insert_format_with_values_on_next_line(): void
-    {
-        $path = tempnam(sys_get_temp_dir(), 'sequel-ace-dump');
-        file_put_contents($path, <<<'SQL'
+test('parses sequel ace insert format with values on next line', function () {
+    $path = tempnam(sys_get_temp_dir(), 'sequel-ace-dump');
+    file_put_contents($path, <<<'SQL'
 CREATE TABLE `payment_gateways` (
   `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(255) DEFAULT NULL,
@@ -32,19 +26,18 @@ INSERT INTO `users` (`id`, `email`) VALUES
 (10,'buyer@example.com');
 SQL);
 
-        $reader = new MySqlDumpReader($path);
-        unlink($path);
+    $reader = new MySqlDumpReader($path);
+    unlink($path);
 
-        $this->assertSame(2, $reader->rowCount('payment_gateways'));
-        $this->assertSame(1, $reader->rowCount('users'));
-        $this->assertSame('stripe', $reader->rows('payment_gateways')[0]['name']);
-        $this->assertSame('buyer@example.com', $reader->rows('users')[0]['email']);
-    }
+    expect($reader->rowCount('payment_gateways'))->toBe(2);
+    expect($reader->rowCount('users'))->toBe(1);
+    expect($reader->rows('payment_gateways')[0]['name'])->toBe('stripe');
+    expect($reader->rows('users')[0]['email'])->toBe('buyer@example.com');
+});
 
-    public function test_parses_insert_header_followed_by_values_row_on_next_line(): void
-    {
-        $path = tempnam(sys_get_temp_dir(), 'values-row-dump');
-        file_put_contents($path, <<<'SQL'
+test('parses insert header followed by values row on next line', function () {
+    $path = tempnam(sys_get_temp_dir(), 'values-row-dump');
+    file_put_contents($path, <<<'SQL'
 CREATE TABLE `users` (
   `id` int NOT NULL,
   `email` varchar(255) DEFAULT NULL,
@@ -55,26 +48,24 @@ INSERT INTO `users` (`id`, `email`)
 VALUES (42,'split-values-row@example.com');
 SQL);
 
-        $reader = new MySqlDumpReader($path);
-        unlink($path);
+    $reader = new MySqlDumpReader($path);
+    unlink($path);
 
-        $this->assertSame(1, $reader->rowCount('users'));
-        $this->assertSame('split-values-row@example.com', $reader->rows('users')[0]['email']);
-    }
+    expect($reader->rowCount('users'))->toBe(1);
+    expect($reader->rows('users')[0]['email'])->toBe('split-values-row@example.com');
+});
 
-    public function test_parses_rows_from_legacy_subset_fixture(): void
-    {
-        $fixture = base_path('tests/fixtures/legacy-subset.sql');
-        $reader = new MySqlDumpReader($fixture);
+test('parses rows from legacy subset fixture', function () {
+    $fixture = base_path('tests/fixtures/legacy-subset.sql');
+    $reader = new MySqlDumpReader($fixture);
 
-        $this->assertGreaterThan(0, $reader->rowCount('users'));
-        $this->assertGreaterThan(0, $reader->rowCount('products'));
-    }
+    expect($reader->rowCount('users'))->toBeGreaterThan(0);
+    expect($reader->rowCount('products'))->toBeGreaterThan(0);
+});
 
-    public function test_unescapes_mysql_line_break_sequences_in_strings(): void
-    {
-        $path = tempnam(sys_get_temp_dir(), 'mysql-escapes-dump');
-        file_put_contents($path, <<<'SQL'
+test('unescapes mysql line break sequences in strings', function () {
+    $path = tempnam(sys_get_temp_dir(), 'mysql-escapes-dump');
+    file_put_contents($path, <<<'SQL'
 CREATE TABLE `product_details` (
   `product_id` int NOT NULL,
   `description` text,
@@ -85,16 +76,15 @@ INSERT INTO `product_details` (`product_id`, `description`) VALUES
 (1,'For Sale\r\n- Year: 2010\r\n- Price: 6.5m');
 SQL);
 
-        $reader = new MySqlDumpReader($path);
-        unlink($path);
+    $reader = new MySqlDumpReader($path);
+    unlink($path);
 
-        $this->assertSame("For Sale\r\n- Year: 2010\r\n- Price: 6.5m", $reader->rows('product_details')[0]['description']);
-    }
+    expect($reader->rows('product_details')[0]['description'])->toBe("For Sale\r\n- Year: 2010\r\n- Price: 6.5m");
+});
 
-    public function test_unescapes_mysql_tab_and_quote_sequences(): void
-    {
-        $path = tempnam(sys_get_temp_dir(), 'mysql-tab-dump');
-        file_put_contents($path, <<<'SQL'
+test('unescapes mysql tab and quote sequences', function () {
+    $path = tempnam(sys_get_temp_dir(), 'mysql-tab-dump');
+    file_put_contents($path, <<<'SQL'
 CREATE TABLE `notes` (
   `id` int NOT NULL,
   `body` text,
@@ -105,9 +95,8 @@ INSERT INTO `notes` (`id`, `body`) VALUES
 (1,'tab\there\\backslash\'quote');
 SQL);
 
-        $reader = new MySqlDumpReader($path);
-        unlink($path);
+    $reader = new MySqlDumpReader($path);
+    unlink($path);
 
-        $this->assertSame("tab\there\\backslash'quote", $reader->rows('notes')[0]['body']);
-    }
-}
+    expect($reader->rows('notes')[0]['body'])->toBe("tab\there\\backslash'quote");
+});

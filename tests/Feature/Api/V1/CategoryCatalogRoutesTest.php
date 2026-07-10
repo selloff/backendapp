@@ -1,64 +1,50 @@
 <?php
 
-namespace Tests\Feature\Api\V1;
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-use Tests\TestCase;
+test('public categories index is registered', function () {
+    $this->getJson('/api/v1/categories?roots_only=1')
+        ->assertOk()
+        ->assertJsonStructure([
+            'success',
+            'data' => [
+                '*' => ['id', 'slug', 'name', 'parent_id', 'ads_count', 'image_url'],
+            ],
+        ]);
+});
 
-class CategoryCatalogRoutesTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+test('categories include nested children', function () {
+    $response = $this->getJson('/api/v1/categories?roots_only=1')->assertOk();
+    $roots = collect($response->json('data'));
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+    $withChildren = $roots->first(fn (array $category) => ! empty($category['children']));
+    expect($withChildren)->not->toBeNull('Expected at least one root category with nested children.');
+    expect($withChildren['children'][0])->toHaveKey('name');
+    expect($withChildren['has_children'])->toBeTrue();
+});
 
-    public function test_public_categories_index_is_registered(): void
-    {
-        $this->getJson('/api/v1/categories?roots_only=1')
-            ->assertOk()
-            ->assertJsonStructure([
-                'success',
-                'data' => [
-                    '*' => ['id', 'slug', 'name', 'parent_id', 'ads_count', 'image_url'],
-                ],
-            ]);
-    }
+test('category children endpoint returns subcategories', function () {
+    $parent = collect($this->getJson('/api/v1/categories?roots_only=1')->json('data'))
+        ->first(fn (array $category) => ! empty($category['children']));
 
-    public function test_categories_include_nested_children(): void
-    {
-        $response = $this->getJson('/api/v1/categories?roots_only=1')->assertOk();
-        $roots = collect($response->json('data'));
+    expect($parent)->not->toBeNull();
 
-        $withChildren = $roots->first(fn (array $category) => ! empty($category['children']));
-        $this->assertNotNull($withChildren, 'Expected at least one root category with nested children.');
-        $this->assertArrayHasKey('name', $withChildren['children'][0]);
-        $this->assertTrue($withChildren['has_children']);
-    }
+    $this->getJson("/api/v1/categories/{$parent['id']}/children")
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonStructure([
+            'data' => [
+                '*' => ['id', 'slug', 'name', 'parent_id', 'has_children'],
+            ],
+        ]);
+});
 
-    public function test_category_children_endpoint_returns_subcategories(): void
-    {
-        $parent = collect($this->getJson('/api/v1/categories?roots_only=1')->json('data'))
-            ->first(fn (array $category) => ! empty($category['children']));
+test('categories include rollup listing counts', function () {
+    $response = $this->getJson('/api/v1/categories?roots_only=1')->assertOk();
+    $roots = collect($response->json('data'));
 
-        $this->assertNotNull($parent);
-
-        $this->getJson("/api/v1/categories/{$parent['id']}/children")
-            ->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonStructure([
-                'data' => [
-                    '*' => ['id', 'slug', 'name', 'parent_id', 'has_children'],
-                ],
-            ]);
-    }
-
-    public function test_categories_include_rollup_listing_counts(): void
-    {
-        $response = $this->getJson('/api/v1/categories?roots_only=1')->assertOk();
-        $roots = collect($response->json('data'));
-
-        $this->assertGreaterThan(0, $roots->count());
-        $this->assertGreaterThan(0, (int) $roots->first()['ads_count']);
-    }
-}
+    expect($roots->count())->toBeGreaterThan(0);
+    expect((int) $roots->first()['ads_count'])->toBeGreaterThan(0);
+});

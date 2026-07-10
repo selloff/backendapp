@@ -1,161 +1,141 @@
 <?php
 
-namespace Tests\Feature\Console;
-
 use App\Models\User;
 use App\Modules\Selloff\Payment\Models\MembershipPlan;
 use App\Modules\Selloff\Payment\Models\UserMembershipPlan;
 use App\Modules\Selloff\Payment\Services\MembershipExpiryNotificationService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Mail;
-use Tests\TestCase;
 
-class NotifyExpiredMembershipsCommandTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+    config(['selloff.spa_url' => 'https://app.selloff.test']);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-        config(['selloff.spa_url' => 'https://app.selloff.test']);
-    }
+test('command sends expiry email with renew link', function () {
+    Mail::fake();
 
-    public function test_command_sends_expiry_email_with_renew_link(): void
-    {
-        Mail::fake();
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
 
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
+    UserMembershipPlan::query()->updateOrCreate(
+        ['user_id' => $vendor->id, 'membership_plan_id' => $plan->id],
+        [
+            'starts_at' => now()->subMonths(2),
+            'expires_at' => now()->subHours(6),
+            'is_active' => true,
+            'expiry_notified_at' => null,
+        ],
+    );
 
-        UserMembershipPlan::query()->updateOrCreate(
-            ['user_id' => $vendor->id, 'membership_plan_id' => $plan->id],
-            [
-                'starts_at' => now()->subMonths(2),
-                'expires_at' => now()->subHours(6),
-                'is_active' => true,
-                'expiry_notified_at' => null,
-            ],
-        );
+    Artisan::call('selloff:notify-expired-memberships');
 
-        Artisan::call('selloff:notify-expired-memberships');
+    $this->assertStringContainsString('Sent 1 membership expiry notification(s).', Artisan::output());
 
-        $this->assertStringContainsString('Sent 1 membership expiry notification(s).', Artisan::output());
+    expect(UserMembershipPlan::query()
+        ->where('user_id', $vendor->id)
+        ->where('membership_plan_id', $plan->id)
+        ->value('expiry_notified_at'))->not->toBeNull();
+});
 
-        $this->assertNotNull(
-            UserMembershipPlan::query()
-                ->where('user_id', $vendor->id)
-                ->where('membership_plan_id', $plan->id)
-                ->value('expiry_notified_at'),
-        );
-    }
+test('service notify includes renew link in email body', function () {
+    $capturedBody = null;
 
-    public function test_service_notify_includes_renew_link_in_email_body(): void
-    {
-        $capturedBody = null;
+    Mail::shouldReceive('raw')
+        ->once()
+        ->withArgs(function (string $body) use (&$capturedBody) {
+            $capturedBody = $body;
 
-        Mail::shouldReceive('raw')
-            ->once()
-            ->withArgs(function (string $body) use (&$capturedBody) {
-                $capturedBody = $body;
+            return str_contains($body, 'https://app.selloff.test/vendor/membership/subscribe')
+                && str_contains($body, 'Demo Vendor Pro');
+        });
 
-                return str_contains($body, 'https://app.selloff.test/vendor/membership/subscribe')
-                    && str_contains($body, 'Demo Vendor Pro');
-            });
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
 
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
+    $subscription = UserMembershipPlan::query()->updateOrCreate(
+        ['user_id' => $vendor->id, 'membership_plan_id' => $plan->id],
+        [
+            'starts_at' => now()->subMonths(2),
+            'expires_at' => now()->subHours(6),
+            'is_active' => true,
+            'expiry_notified_at' => null,
+        ],
+    );
 
-        $subscription = UserMembershipPlan::query()->updateOrCreate(
-            ['user_id' => $vendor->id, 'membership_plan_id' => $plan->id],
-            [
-                'starts_at' => now()->subMonths(2),
-                'expires_at' => now()->subHours(6),
-                'is_active' => true,
-                'expiry_notified_at' => null,
-            ],
-        );
+    app(MembershipExpiryNotificationService::class)->notify($subscription->fresh());
 
-        app(MembershipExpiryNotificationService::class)->notify($subscription->fresh());
+    expect($capturedBody)->not->toBeNull();
+});
 
-        $this->assertNotNull($capturedBody);
-    }
+test('command skips already notified subscriptions', function () {
+    Mail::fake();
 
-    public function test_command_skips_already_notified_subscriptions(): void
-    {
-        Mail::fake();
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
 
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
+    UserMembershipPlan::query()->updateOrCreate(
+        ['user_id' => $vendor->id, 'membership_plan_id' => $plan->id],
+        [
+            'starts_at' => now()->subMonths(2),
+            'expires_at' => now()->subDay(),
+            'is_active' => true,
+            'expiry_notified_at' => now()->subHour(),
+        ],
+    );
 
-        UserMembershipPlan::query()->updateOrCreate(
-            ['user_id' => $vendor->id, 'membership_plan_id' => $plan->id],
-            [
-                'starts_at' => now()->subMonths(2),
-                'expires_at' => now()->subDay(),
-                'is_active' => true,
-                'expiry_notified_at' => now()->subHour(),
-            ],
-        );
+    Artisan::call('selloff:notify-expired-memberships');
 
-        Artisan::call('selloff:notify-expired-memberships');
+    Mail::assertNothingSent();
+    $this->assertStringContainsString('Sent 0 membership expiry notification(s).', Artisan::output());
+});
 
-        Mail::assertNothingSent();
-        $this->assertStringContainsString('Sent 0 membership expiry notification(s).', Artisan::output());
-    }
+test('command skips active unexpired subscriptions', function () {
+    Mail::fake();
 
-    public function test_command_skips_active_unexpired_subscriptions(): void
-    {
-        Mail::fake();
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
 
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
+    UserMembershipPlan::query()->updateOrCreate(
+        ['user_id' => $vendor->id, 'membership_plan_id' => $plan->id],
+        [
+            'starts_at' => now()->subMonth(),
+            'expires_at' => now()->addMonth(),
+            'is_active' => true,
+            'expiry_notified_at' => null,
+        ],
+    );
 
-        UserMembershipPlan::query()->updateOrCreate(
-            ['user_id' => $vendor->id, 'membership_plan_id' => $plan->id],
-            [
-                'starts_at' => now()->subMonth(),
-                'expires_at' => now()->addMonth(),
-                'is_active' => true,
-                'expiry_notified_at' => null,
-            ],
-        );
+    Artisan::call('selloff:notify-expired-memberships');
 
-        Artisan::call('selloff:notify-expired-memberships');
+    Mail::assertNothingSent();
+});
 
-        Mail::assertNothingSent();
-    }
+test('service renew url uses spa url', function () {
+    $service = app(MembershipExpiryNotificationService::class);
 
-    public function test_service_renew_url_uses_spa_url(): void
-    {
-        $service = app(MembershipExpiryNotificationService::class);
+    expect($service->renewUrl())->toBe('https://app.selloff.test/vendor/membership/subscribe');
+});
 
-        $this->assertSame(
-            'https://app.selloff.test/vendor/membership/subscribe',
-            $service->renewUrl(),
-        );
-    }
+test('second run is idempotent for same expiry', function () {
+    Mail::fake();
 
-    public function test_second_run_is_idempotent_for_same_expiry(): void
-    {
-        Mail::fake();
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
 
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $plan = MembershipPlan::query()->where('title', 'Demo Vendor Pro')->firstOrFail();
+    UserMembershipPlan::query()->updateOrCreate(
+        ['user_id' => $vendor->id, 'membership_plan_id' => $plan->id],
+        [
+            'starts_at' => now()->subMonths(2),
+            'expires_at' => now()->subHours(2),
+            'is_active' => true,
+            'expiry_notified_at' => null,
+        ],
+    );
 
-        UserMembershipPlan::query()->updateOrCreate(
-            ['user_id' => $vendor->id, 'membership_plan_id' => $plan->id],
-            [
-                'starts_at' => now()->subMonths(2),
-                'expires_at' => now()->subHours(2),
-                'is_active' => true,
-                'expiry_notified_at' => null,
-            ],
-        );
+    Artisan::call('selloff:notify-expired-memberships');
+    $this->assertStringContainsString('Sent 1 membership expiry notification(s).', Artisan::output());
 
-        Artisan::call('selloff:notify-expired-memberships');
-        $this->assertStringContainsString('Sent 1 membership expiry notification(s).', Artisan::output());
-
-        Artisan::call('selloff:notify-expired-memberships');
-        $this->assertStringContainsString('Sent 0 membership expiry notification(s).', Artisan::output());
-    }
-}
+    Artisan::call('selloff:notify-expired-memberships');
+    $this->assertStringContainsString('Sent 0 membership expiry notification(s).', Artisan::output());
+});

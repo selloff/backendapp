@@ -1,44 +1,32 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\Modules\Selloff\Catalog\Http\Resources\Api\V1\ProductResource;
 use App\Modules\Selloff\Catalog\Models\Product;
 use Illuminate\Support\Facades\DB;
-use Tests\TestCase;
 
-class ProductsLegacyImporterLocationTest extends TestCase
-{
-    private string $fixture;
+beforeEach(function () {
+    $this->fixture = base_path('tests/fixtures/product-location-import.sql');
+    $this->artisan('selloff:migrate', ['--fresh' => true]);
+});
 
-    protected function setUp(): void
-    {
-        parent::setUp();
+test('product location and verified seller are imported', function () {
+    $this->artisan('selloff:import-legacy-data', ['--source' => $this->fixture])->assertSuccessful();
 
-        $this->fixture = base_path('tests/fixtures/product-location-import.sql');
-        $this->artisan('selloff:migrate', ['--fresh' => true]);
-    }
+    $product = DB::table('products')->where('id', 94001)->first();
+    expect($product)->not->toBeNull();
+    expect((int) $product->state_id)->toBe(306);
+    expect((int) $product->city_id)->toBe(1001);
 
-    public function test_product_location_and_verified_seller_are_imported(): void
-    {
-        $this->artisan('selloff:import-legacy-data', ['--source' => $this->fixture])->assertSuccessful();
+    $verified = DB::table('vendor_profiles')->where('user_id', 92001)->value('is_verified_seller');
+    expect((bool) $verified)->toBeTrue();
 
-        $product = DB::table('products')->where('id', 94001)->first();
-        $this->assertNotNull($product);
-        $this->assertSame(306, (int) $product->state_id);
-        $this->assertSame(1001, (int) $product->city_id);
+    $model = Product::query()
+        ->with(ProductResource::listEagerLoads())
+        ->findOrFail(94001);
 
-        $verified = DB::table('vendor_profiles')->where('user_id', 92001)->value('is_verified_seller');
-        $this->assertTrue((bool) $verified);
+    $payload = (new ProductResource($model))->resolve();
 
-        $model = Product::query()
-            ->with(ProductResource::listEagerLoads())
-            ->findOrFail(94001);
-
-        $payload = (new ProductResource($model))->resolve();
-
-        $this->assertSame('Ogun', $payload['state_name']);
-        $this->assertSame('Abeokuta South', $payload['city_name']);
-        $this->assertTrue($payload['vendor']['is_verified_seller']);
-    }
-}
+    expect($payload['state_name'])->toBe('Ogun');
+    expect($payload['city_name'])->toBe('Abeokuta South');
+    expect($payload['vendor']['is_verified_seller'])->toBeTrue();
+});

@@ -1,26 +1,17 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\LegacyImport\Importers\CatalogDepthLegacyImporter;
 use App\LegacyImport\LegacyImportContext;
 use App\LegacyImport\MySqlDumpReader;
 use Illuminate\Support\Facades\DB;
-use Tests\TestCase;
 
-class CatalogDepthDryRunTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
-
-    public function test_product_tags_dry_run_does_not_insert_tags(): void
-    {
-        $dumpPath = storage_path('app/test-product-tags-dry-run.sql');
-        file_put_contents($dumpPath, <<<'SQL'
+test('product tags dry run does not insert tags', function () {
+    $dumpPath = storage_path('app/test-product-tags-dry-run.sql');
+    file_put_contents($dumpPath, <<<'SQL'
 CREATE TABLE `users` (`id` int NOT NULL, `email` varchar(255) NOT NULL, `password` varchar(255) NOT NULL, `role_id` int DEFAULT 1, PRIMARY KEY (`id`));
 INSERT INTO `users` (`id`, `email`, `password`, `role_id`) VALUES (1, 'vendor@test.local', '$2y$10$test', 2);
 
@@ -34,21 +25,20 @@ CREATE TABLE `product_tags` (`id` int NOT NULL, `product_id` int NOT NULL, `lang
 INSERT INTO `product_tags` (`id`, `product_id`, `lang_id`, `tag`) VALUES (1, 501, 1, 'dry-run-only-tag');
 SQL);
 
-        $this->artisan('selloff:import-legacy-data', [
-            '--source' => $dumpPath,
-            '--skip-verify' => true,
-        ])->assertSuccessful();
+    $this->artisan('selloff:import-legacy-data', [
+        '--source' => $dumpPath,
+        '--skip-verify' => true,
+    ])->assertSuccessful();
 
-        $tagCountBefore = DB::table('tags')->count();
-        $pivotCountBefore = DB::table('product_tag')->count();
+    $tagCountBefore = DB::table('tags')->count();
+    $pivotCountBefore = DB::table('product_tag')->count();
 
-        $context = new LegacyImportContext(dryRun: true, tableFilter: 'product_tags');
-        app(CatalogDepthLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
+    $context = new LegacyImportContext(dryRun: true, tableFilter: 'product_tags');
+    app(CatalogDepthLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
 
-        $this->assertSame($tagCountBefore, DB::table('tags')->count());
-        $this->assertSame($pivotCountBefore, DB::table('product_tag')->count());
-        $this->assertNull(DB::table('tags')->where('tag', 'dry-run-only-tag')->value('id'));
+    expect(DB::table('tags')->count())->toBe($tagCountBefore);
+    expect(DB::table('product_tag')->count())->toBe($pivotCountBefore);
+    expect(DB::table('tags')->where('tag')->value('id'))->toBeNull();
 
-        @unlink($dumpPath);
-    }
-}
+    @unlink($dumpPath);
+});

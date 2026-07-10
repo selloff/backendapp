@@ -1,94 +1,78 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\LegacyImport\LegacyImportCoverage;
 use App\LegacyImport\LegacyImportOrchestrator;
 use App\LegacyImport\MySqlDumpReader;
 use App\LegacyImport\Support\LegacyImportConfig;
 use App\LegacyImport\Support\LegacyValueCoercer;
 use Illuminate\Support\Facades\DB;
-use Tests\TestCase;
 
-class Pass16EtlTest extends TestCase
-{
-    private string $fixture;
+beforeEach(function () {
+    $this->fixture = base_path('tests/fixtures/legacy-subset.sql');
+    $this->artisan('selloff:migrate', ['--fresh' => true]);
+});
 
-    protected function setUp(): void
-    {
-        parent::setUp();
+test('phase 16 subset fixture imports catalog commerce and payment depth', function () {
+    $this->artisan('selloff:import-legacy-data', [
+        '--source' => $this->fixture,
+    ])->assertSuccessful();
 
-        $this->fixture = base_path('tests/fixtures/legacy-subset.sql');
-        $this->artisan('selloff:migrate', ['--fresh' => true]);
-    }
+    expect(DB::table('product_options')->where('legacy_id', 3101)->count())->toBe(1);
+    expect(DB::table('product_variants')->where('legacy_id', 3103)->count())->toBe(1);
+    expect(DB::table('custom_fields')->where('legacy_id', 3301)->count())->toBe(1);
+    expect(DB::table('digital_files')->where('legacy_id', 3401)->count())->toBe(1);
+    expect(DB::table('product_license_keys')->where('legacy_id', 3501)->count())->toBe(1);
+    expect(DB::table('tags')->where('legacy_id', 3201)->count())->toBe(1);
+    expect(DB::table('invoices')->where('legacy_id', 4101)->count())->toBe(1);
+    expect(DB::table('quote_requests')->where('legacy_id', 4102)->count())->toBe(1);
+    expect(DB::table('digital_sales')->where('legacy_id', 4103)->count())->toBe(1);
+    expect(DB::table('coupon_usages')->where('legacy_id', 8102)->count())->toBe(1);
+    expect(DB::table('tax_rules')->where('legacy_id', 8201)->count())->toBe(1);
+    expect(DB::table('bank_transfer_requests')->where('legacy_id', 8301)->count())->toBe(1);
+    expect(DB::table('membership_plans')->where('legacy_id', 8401)->count())->toBe(1);
+    expect(DB::table('user_membership_plans')->where('legacy_id', 8402)->count())->toBe(1);
+    expect(DB::table('membership_transactions')->where('legacy_id', 8403)->count())->toBe(1);
+    expect(DB::table('membership_transactions')->where('legacy_id', 8403)->value('term_months'))->toBe(1);
+    expect(DB::table('membership_transactions')->where('legacy_id', 8403)->value('purchase_type'))->toBe('new');
+    expect(DB::table('user_membership_plans')->where('legacy_id', 8402)->value('term_months'))->toBe(1);
+    expect(DB::table('user_membership_plans')->where('legacy_id', 8402)->value('last_paid_amount'))->not->toBeNull();
+    expect(DB::table('promotion_transactions')->where('legacy_id', 8501)->count())->toBe(1);
+    expect(DB::table('login_activities')->where('id', 8601)->count())->toBe(1);
+});
 
-    public function test_phase_16_subset_fixture_imports_catalog_commerce_and_payment_depth(): void
-    {
-        $this->artisan('selloff:import-legacy-data', [
-            '--source' => $this->fixture,
-        ])->assertSuccessful();
+test('legacy numeric visibility maps to visible string', function () {
+    expect(LegacyValueCoercer::visibility(1))->toBe('visible');
+    expect(LegacyValueCoercer::visibility(0))->toBe('hidden');
+});
 
-        $this->assertSame(1, DB::table('product_options')->where('legacy_id', 3101)->count());
-        $this->assertSame(1, DB::table('product_variants')->where('legacy_id', 3103)->count());
-        $this->assertSame(1, DB::table('custom_fields')->where('legacy_id', 3301)->count());
-        $this->assertSame(1, DB::table('digital_files')->where('legacy_id', 3401)->count());
-        $this->assertSame(1, DB::table('product_license_keys')->where('legacy_id', 3501)->count());
-        $this->assertSame(1, DB::table('tags')->where('legacy_id', 3201)->count());
-        $this->assertSame(1, DB::table('invoices')->where('legacy_id', 4101)->count());
-        $this->assertSame(1, DB::table('quote_requests')->where('legacy_id', 4102)->count());
-        $this->assertSame(1, DB::table('digital_sales')->where('legacy_id', 4103)->count());
-        $this->assertSame(1, DB::table('coupon_usages')->where('legacy_id', 8102)->count());
-        $this->assertSame(1, DB::table('tax_rules')->where('legacy_id', 8201)->count());
-        $this->assertSame(1, DB::table('bank_transfer_requests')->where('legacy_id', 8301)->count());
-        $this->assertSame(1, DB::table('membership_plans')->where('legacy_id', 8401)->count());
-        $this->assertSame(1, DB::table('user_membership_plans')->where('legacy_id', 8402)->count());
-        $this->assertSame(1, DB::table('membership_transactions')->where('legacy_id', 8403)->count());
-        $this->assertSame(1, DB::table('membership_transactions')->where('legacy_id', 8403)->value('term_months'));
-        $this->assertSame('new', DB::table('membership_transactions')->where('legacy_id', 8403)->value('purchase_type'));
-        $this->assertSame(1, DB::table('user_membership_plans')->where('legacy_id', 8402)->value('term_months'));
-        $this->assertNotNull(DB::table('user_membership_plans')->where('legacy_id', 8402)->value('last_paid_amount'));
-        $this->assertSame(1, DB::table('promotion_transactions')->where('legacy_id', 8501)->count());
-        $this->assertSame(1, DB::table('login_activities')->where('id', 8601)->count());
-    }
+test('legacy numeric visibility imports as visible', function () {
+    $this->artisan('selloff:import-legacy-data', [
+        '--source' => $this->fixture,
+    ])->assertSuccessful();
 
-    public function test_legacy_numeric_visibility_maps_to_visible_string(): void
-    {
-        $this->assertSame('visible', LegacyValueCoercer::visibility(1));
-        $this->assertSame('hidden', LegacyValueCoercer::visibility(0));
-    }
+    expect(DB::table('products')->where('id', 301)->value('visibility'))->toBe('visible');
+});
 
-    public function test_legacy_numeric_visibility_imports_as_visible(): void
-    {
-        $this->artisan('selloff:import-legacy-data', [
-            '--source' => $this->fixture,
-        ])->assertSuccessful();
+test('phase 16 verify passes with extended orphan checks', function () {
+    $this->artisan('selloff:import-legacy-data', [
+        '--source' => $this->fixture,
+    ])->assertSuccessful();
 
-        $this->assertSame('visible', DB::table('products')->where('id', 301)->value('visibility'));
-    }
+    $this->artisan('selloff:verify-legacy-import', [
+        '--source' => $this->fixture,
+    ])->assertSuccessful();
+});
 
-    public function test_phase_16_verify_passes_with_extended_orphan_checks(): void
-    {
-        $this->artisan('selloff:import-legacy-data', [
-            '--source' => $this->fixture,
-        ])->assertSuccessful();
+test('phase 16 coverage has zero unhandled tables on subset', function () {
+    $reader = new MySqlDumpReader($this->fixture);
+    $coverage = app(LegacyImportCoverage::class);
+    $orchestrator = app(LegacyImportOrchestrator::class);
 
-        $this->artisan('selloff:verify-legacy-import', [
-            '--source' => $this->fixture,
-        ])->assertSuccessful();
-    }
+    $unhandled = $coverage->unhandledTables(
+        $reader,
+        $orchestrator->coveredLegacyTables(),
+        LegacyImportConfig::coverageExcludedTables(),
+    );
 
-    public function test_phase_16_coverage_has_zero_unhandled_tables_on_subset(): void
-    {
-        $reader = new MySqlDumpReader($this->fixture);
-        $coverage = app(LegacyImportCoverage::class);
-        $orchestrator = app(LegacyImportOrchestrator::class);
-
-        $unhandled = $coverage->unhandledTables(
-            $reader,
-            $orchestrator->coveredLegacyTables(),
-            LegacyImportConfig::coverageExcludedTables(),
-        );
-
-        $this->assertSame([], $unhandled);
-    }
-}
+    expect($unhandled)->toBe([]);
+});

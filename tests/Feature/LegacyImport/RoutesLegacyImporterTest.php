@@ -1,26 +1,17 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\LegacyImport\Importers\RoutesLegacyImporter;
 use App\LegacyImport\LegacyImportContext;
 use App\LegacyImport\MySqlDumpReader;
 use Illuminate\Support\Facades\DB;
-use Tests\TestCase;
 
-class RoutesLegacyImporterTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
-
-    public function test_imports_legacy_routes_into_route_slugs(): void
-    {
-        $dumpPath = storage_path('app/test-routes-import.sql');
-        file_put_contents($dumpPath, <<<'SQL'
+test('imports legacy routes into route slugs', function () {
+    $dumpPath = storage_path('app/test-routes-import.sql');
+    file_put_contents($dumpPath, <<<'SQL'
 CREATE TABLE `routes` (
   `id` int NOT NULL,
   `route_key` varchar(100) NOT NULL,
@@ -33,22 +24,21 @@ VALUES
 (7,'cart','shopping-cart');
 SQL);
 
-        $context = new LegacyImportContext(dryRun: false, tableFilter: 'routes');
+    $context = new LegacyImportContext(dryRun: false, tableFilter: 'routes');
 
-        app(RoutesLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
+    app(RoutesLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
 
-        $this->assertSame('admin-2025', DB::table('route_slugs')->where('route_key', 'admin')->value('slug'));
-        $this->assertSame(4, (int) DB::table('route_slugs')->where('route_key', 'admin')->value('legacy_id'));
-        $this->assertSame('shopping-cart', DB::table('route_slugs')->where('route_key', 'cart')->value('slug'));
-        $this->assertGreaterThanOrEqual(70, DB::table('route_slugs')->count());
+    expect(DB::table('route_slugs')->where('route_key', 'admin')->value('slug'))->toBe('admin-2025');
+    expect((int) DB::table('route_slugs')->where('route_key', 'admin')->value('legacy_id'))->toBe(4);
+    expect(DB::table('route_slugs')->where('route_key', 'cart')->value('slug'))->toBe('shopping-cart');
+    expect(DB::table('route_slugs')->count())->toBeGreaterThanOrEqual(70);
 
-        @unlink($dumpPath);
-    }
+    @unlink($dumpPath);
+});
 
-    public function test_dry_run_does_not_write_route_slugs(): void
-    {
-        $dumpPath = storage_path('app/test-routes-dry-run.sql');
-        file_put_contents($dumpPath, <<<'SQL'
+test('dry run does not write route slugs', function () {
+    $dumpPath = storage_path('app/test-routes-dry-run.sql');
+    file_put_contents($dumpPath, <<<'SQL'
 CREATE TABLE `routes` (
   `id` int NOT NULL,
   `route_key` varchar(100) NOT NULL,
@@ -60,14 +50,13 @@ VALUES
 (99,'dry-run-test','dry-run-slug');
 SQL);
 
-        $before = DB::table('route_slugs')->count();
-        $context = new LegacyImportContext(dryRun: true, tableFilter: 'routes');
+    $before = DB::table('route_slugs')->count();
+    $context = new LegacyImportContext(dryRun: true, tableFilter: 'routes');
 
-        app(RoutesLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
+    app(RoutesLegacyImporter::class)->import($context, new MySqlDumpReader($dumpPath));
 
-        $this->assertSame($before, DB::table('route_slugs')->count());
-        $this->assertNull(DB::table('route_slugs')->where('route_key', 'dry-run-test')->value('slug'));
+    expect(DB::table('route_slugs')->count())->toBe($before);
+    expect(DB::table('route_slugs')->where('route_key', 'dry-run-test')->value('slug'))->toBeNull();
 
-        @unlink($dumpPath);
-    }
-}
+    @unlink($dumpPath);
+});

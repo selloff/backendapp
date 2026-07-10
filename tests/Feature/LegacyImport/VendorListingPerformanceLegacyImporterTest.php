@@ -1,71 +1,53 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
-use Tests\TestCase;
 
-class VendorListingPerformanceLegacyImporterTest extends TestCase
-{
-    private string $fixture;
+beforeEach(function () {
+    $this->fixture = base_path('tests/fixtures/product-pageviews-import.sql');
+    $this->artisan('selloff:migrate', ['--fresh' => true]);
+    $this->artisan('selloff:import-legacy-data', ['--source' => $this->fixture])->assertSuccessful();
+});
 
-    protected function setUp(): void
-    {
-        parent::setUp();
+test('legacy pageviews seed listing daily metrics', function () {
+    $totalTraffic = (int) DB::table('product_listing_daily_metrics')
+        ->where('product_id', 96001)
+        ->sum('traffic');
 
-        $this->fixture = base_path('tests/fixtures/product-pageviews-import.sql');
-        $this->artisan('selloff:migrate', ['--fresh' => true]);
-        $this->artisan('selloff:import-legacy-data', ['--source' => $this->fixture])->assertSuccessful();
-    }
+    expect($totalTraffic)->toBe(1847);
+    expect((int) DB::table('products')->where('id', 96001)->value('pageviews'))->toBe(1847);
+    expect(DB::table('product_listing_daily_metrics')->where('product_id', 96001)->count())->toBeGreaterThan(0);
+    expect(DB::table('product_listing_daily_metrics')->where('product_id', 96002)->count())->toBe(0);
+});
 
-    public function test_legacy_pageviews_seed_listing_daily_metrics(): void
-    {
-        $totalTraffic = (int) DB::table('product_listing_daily_metrics')
-            ->where('product_id', 96001)
-            ->sum('traffic');
+test('legacy pageviews seed vendor daily metrics', function () {
+    $totalTraffic = (int) DB::table('vendor_listing_daily_metrics')
+        ->where('vendor_id', 94001)
+        ->sum('traffic');
 
-        $this->assertSame(1847, $totalTraffic);
-        $this->assertSame(1847, (int) DB::table('products')->where('id', 96001)->value('pageviews'));
-        $this->assertGreaterThan(0, DB::table('product_listing_daily_metrics')->where('product_id', 96001)->count());
-        $this->assertSame(0, DB::table('product_listing_daily_metrics')->where('product_id', 96002)->count());
-    }
+    expect($totalTraffic)->toBe(1847);
+});
 
-    public function test_legacy_pageviews_seed_vendor_daily_metrics(): void
-    {
-        $totalTraffic = (int) DB::table('vendor_listing_daily_metrics')
-            ->where('vendor_id', 94001)
-            ->sum('traffic');
+test('sync command rebuilds metrics from products pageviews', function () {
+    DB::table('product_listing_daily_metrics')->delete();
+    DB::table('vendor_listing_daily_metrics')->delete();
 
-        $this->assertSame(1847, $totalTraffic);
-    }
+    $this->artisan('selloff:sync-listing-performance-metrics')->assertSuccessful();
 
-    public function test_sync_command_rebuilds_metrics_from_products_pageviews(): void
-    {
-        DB::table('product_listing_daily_metrics')->delete();
-        DB::table('vendor_listing_daily_metrics')->delete();
+    expect((int) DB::table('product_listing_daily_metrics')->where('product_id', 96001)->sum('traffic'))->toBe(1847);
+});
 
-        $this->artisan('selloff:sync-listing-performance-metrics')->assertSuccessful();
+test('vendor performance summary reflects imported metrics', function () {
+    $vendor = User::query()->findOrFail(94001);
+    Sanctum::actingAs($vendor);
 
-        $this->assertSame(
-            1847,
-            (int) DB::table('product_listing_daily_metrics')->where('product_id', 96001)->sum('traffic'),
-        );
-    }
+    $response = $this->getJson('/api/v1/vendor/listing-performance?period=1y');
 
-    public function test_vendor_performance_summary_reflects_imported_metrics(): void
-    {
-        $vendor = User::query()->findOrFail(94001);
-        Sanctum::actingAs($vendor);
-
-        $response = $this->getJson('/api/v1/vendor/listing-performance?period=1y');
-
-        $response->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('data.totals.traffic', 1847)
-            ->assertJsonCount(1, 'data.top_listings')
-            ->assertJsonPath('data.top_listings.0.product_id', 96001)
-            ->assertJsonPath('data.top_listings.0.views', 1847);
-    }
-}
+    $response->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('data.totals.traffic', 1847)
+        ->assertJsonCount(1, 'data.top_listings')
+        ->assertJsonPath('data.top_listings.0.product_id', 96001)
+        ->assertJsonPath('data.top_listings.0.views', 1847);
+});

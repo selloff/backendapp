@@ -1,7 +1,5 @@
 <?php
 
-namespace Tests\Feature\Api\V1;
-
 use App\Models\User;
 use App\Modules\Selloff\Catalog\Models\DigitalFile;
 use App\Modules\Selloff\Catalog\Models\Product;
@@ -9,104 +7,91 @@ use App\Modules\Selloff\Order\Models\DigitalSale;
 use App\Modules\Selloff\Shipping\Models\DeliveryTimeOption;
 use App\Services\Platform\PlatformSettingsService;
 use Laravel\Sanctum\Sanctum;
-use Tests\TestCase;
 
-class ProductDetailDepthTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('product show includes platform safety tips', function () {
+    $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
 
-    public function test_product_show_includes_platform_safety_tips(): void
-    {
-        $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
+    $tips = $this->getJson("/api/v1/products/{$product->slug}")
+        ->assertOk()
+        ->json('data.safety_tips');
 
-        $tips = $this->getJson("/api/v1/products/{$product->slug}")
-            ->assertOk()
-            ->json('data.safety_tips');
+    expect($tips)->toBeArray();
+    expect($tips)->toHaveCount(5);
+    $this->assertStringContainsString('Escrow', (string) $tips[1]);
+    $this->assertStringContainsString('strong password', (string) $tips[3]);
+});
 
-        $this->assertIsArray($tips);
-        $this->assertCount(5, $tips);
-        $this->assertStringContainsString('Escrow', (string) $tips[1]);
-        $this->assertStringContainsString('strong password', (string) $tips[3]);
-    }
+test('product show uses updated platform safety tips', function () {
+    app(PlatformSettingsService::class)->upsertMany([
+        'product_safety_tips' => ['Custom tip one', 'Custom tip two'],
+    ], 'product_listing');
 
-    public function test_product_show_uses_updated_platform_safety_tips(): void
-    {
-        app(PlatformSettingsService::class)->upsertMany([
-            'product_safety_tips' => ['Custom tip one', 'Custom tip two'],
-        ], 'product_listing');
+    $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
 
-        $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
+    $this->getJson("/api/v1/products/{$product->slug}")
+        ->assertOk()
+        ->assertJsonPath('data.safety_tips', ['Custom tip one', 'Custom tip two']);
+});
 
-        $this->getJson("/api/v1/products/{$product->slug}")
-            ->assertOk()
-            ->assertJsonPath('data.safety_tips', ['Custom tip one', 'Custom tip two']);
-    }
+test('shipping estimate requires location for guests without params', function () {
+    $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
 
-    public function test_shipping_estimate_requires_location_for_guests_without_params(): void
-    {
-        $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
+    $this->getJson("/api/v1/products/{$product->slug}/shipping-estimate")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'location_required');
+});
 
-        $this->getJson("/api/v1/products/{$product->slug}/shipping-estimate")
-            ->assertOk()
-            ->assertJsonPath('data.status', 'location_required');
-    }
+test('shipping estimate returns zone label for authenticated buyer', function () {
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    Sanctum::actingAs($buyer);
 
-    public function test_shipping_estimate_returns_zone_label_for_authenticated_buyer(): void
-    {
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-        Sanctum::actingAs($buyer);
+    $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
 
-        $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
+    $this->getJson("/api/v1/products/{$product->slug}/shipping-estimate")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'ok')
+        ->assertJsonPath('data.label', '3-5 days');
+});
 
-        $this->getJson("/api/v1/products/{$product->slug}/shipping-estimate")
-            ->assertOk()
-            ->assertJsonPath('data.status', 'ok')
-            ->assertJsonPath('data.label', '3-5 days');
-    }
+test('product show includes viewer digital purchase for owned digital product', function () {
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
 
-    public function test_product_show_includes_viewer_digital_purchase_for_owned_digital_product(): void
-    {
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-        $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
+    $product->update(['type' => 'digital', 'is_free_product' => false]);
 
-        $product->update(['type' => 'digital', 'is_free_product' => false]);
+    DigitalFile::query()->firstOrCreate(
+        ['product_id' => $product->id, 'file_name' => 'uploads/demo/digital-guide.pdf'],
+        ['storage' => 'public'],
+    );
 
-        DigitalFile::query()->firstOrCreate(
-            ['product_id' => $product->id, 'file_name' => 'uploads/demo/digital-guide.pdf'],
-            ['storage' => 'public'],
-        );
+    $sale = DigitalSale::query()->where('buyer_id', $buyer->id)->where('product_id', $product->id)->firstOrFail();
 
-        $sale = DigitalSale::query()->where('buyer_id', $buyer->id)->where('product_id', $product->id)->firstOrFail();
+    Sanctum::actingAs($buyer);
 
-        Sanctum::actingAs($buyer);
+    $this->getJson("/api/v1/products/{$product->slug}")
+        ->assertOk()
+        ->assertJsonPath('data.viewer_digital_purchase.id', $sale->id)
+        ->assertJsonPath('data.viewer_digital_purchase.purchase_code', $sale->purchase_code);
+});
 
-        $this->getJson("/api/v1/products/{$product->slug}")
-            ->assertOk()
-            ->assertJsonPath('data.viewer_digital_purchase.id', $sale->id)
-            ->assertJsonPath('data.viewer_digital_purchase.purchase_code', $sale->purchase_code);
-    }
+test('shipping estimate includes delivery time label when set', function () {
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
 
-    public function test_shipping_estimate_includes_delivery_time_label_when_set(): void
-    {
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-        $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $option = DeliveryTimeOption::query()
+        ->where('seller_id', $vendor->id)
+        ->firstOrFail();
 
-        $option = DeliveryTimeOption::query()
-            ->where('seller_id', $vendor->id)
-            ->firstOrFail();
+    $product->update(['delivery_time_option_id' => $option->id]);
 
-        $product->update(['delivery_time_option_id' => $option->id]);
+    Sanctum::actingAs($buyer);
 
-        Sanctum::actingAs($buyer);
-
-        $this->getJson("/api/v1/products/{$product->slug}/shipping-estimate")
-            ->assertOk()
-            ->assertJsonPath('data.delivery_time_label', $option->label);
-    }
-}
+    $this->getJson("/api/v1/products/{$product->slug}/shipping-estimate")
+        ->assertOk()
+        ->assertJsonPath('data.delivery_time_label', $option->label);
+});

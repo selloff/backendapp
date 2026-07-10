@@ -2,6 +2,7 @@
 
 namespace App\Modules\Selloff\Order\Services;
 
+use App\Support\AdminTabularExport;
 use App\Modules\Selloff\Order\Services\AdminDigitalSalePresenter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;

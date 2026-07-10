@@ -1,30 +1,20 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\LegacyImport\Sync\LegacySeoSettingsSync;
 use App\Models\PlatformSetting;
-use Tests\TestCase;
 
-class LegacySeoSettingsSeedTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('sync imports legacy seo settings', function () {
+    app(LegacySeoSettingsSync::class)->sync();
 
-    public function test_sync_imports_legacy_seo_settings(): void
-    {
-        app(LegacySeoSettingsSync::class)->sync();
+    $analytics = PlatformSetting::query()->where('key', 'google_analytics')->value('value');
+    expect($analytics)->toBeString();
+    $this->assertStringContainsString('Facebook Pixel Code', $analytics);
 
-        $analytics = PlatformSetting::query()->where('key', 'google_analytics')->value('value');
-        $this->assertIsString($analytics);
-        $this->assertStringContainsString('Facebook Pixel Code', $analytics);
-
-        $this->assertSame('none', PlatformSetting::query()->where('key', 'sitemap_frequency')->value('value'));
-        $this->assertSame('none', PlatformSetting::query()->where('key', 'sitemap_last_modification')->value('value'));
-        $this->assertSame('none', PlatformSetting::query()->where('key', 'sitemap_priority')->value('value'));
-    }
-}
+    expect(PlatformSetting::query()->where('key', 'sitemap_frequency')->value('value'))->toBe('none');
+    expect(PlatformSetting::query()->where('key', 'sitemap_last_modification')->value('value'))->toBe('none');
+    expect(PlatformSetting::query()->where('key', 'sitemap_priority')->value('value'))->toBe('none');
+});

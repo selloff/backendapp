@@ -1,7 +1,5 @@
 <?php
 
-namespace Tests\Feature\Api\V1;
-
 use App\Models\User;
 use App\Modules\Selloff\Support\Models\Feedback;
 use App\Modules\Selloff\Support\Models\FeedbackDispute;
@@ -10,249 +8,232 @@ use App\Modules\Selloff\User\Models\VendorProfile;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
-use Tests\TestCase;
 
-class VendorFeedbackTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('guest cannot submit vendor feedback', function () {
+    $vendor = User::query()->whereHas('vendorProfile')->firstOrFail();
 
-    public function test_guest_cannot_submit_vendor_feedback(): void
-    {
-        $vendor = User::query()->whereHas('vendorProfile')->firstOrFail();
+    $this->postJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback", [
+        'feedback_type' => 'positive',
+        'feedback' => 'Great seller experience overall.',
+    ])->assertUnauthorized();
+});
 
-        $this->postJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback", [
+test('vendor cannot leave feedback on own shop', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    Sanctum::actingAs($vendor);
+
+    $this->postJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback", [
+        'feedback_type' => 'positive',
+        'feedback' => 'Great seller experience overall.',
+    ])->assertStatus(422);
+});
+
+test('buyer submits pending feedback and admin approval publishes it', function () {
+    Mail::shouldReceive('raw')
+        ->once()
+        ->withArgs(fn (string $body) => str_contains($body, 'seller feedback'));
+
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+
+    Feedback::query()->where('vendor_id', $vendor->id)->where('user_id', $buyer->id)->delete();
+
+    Sanctum::actingAs($buyer);
+
+    $this->postJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback", [
+        'feedback_type' => 'positive',
+        'feedback' => 'Excellent communication and fast delivery.',
+        'rating' => 5,
+    ])->assertCreated()
+        ->assertJsonPath('data.moderation_status', 'pending');
+
+    $this->getJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback")
+        ->assertOk()
+        ->assertJsonPath('data.total', 0);
+
+    Sanctum::actingAs($admin);
+
+    $feedbackId = Feedback::query()
+        ->where('vendor_id', $vendor->id)
+        ->where('user_id', $buyer->id)
+        ->value('id');
+
+    $this->patchJson("/api/v1/admin/feedback/{$feedbackId}", [
+        'action' => 'approve',
+    ])->assertOk()
+        ->assertJsonPath('data.moderation_status', 'approved');
+
+    $this->getJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback")
+        ->assertOk()
+        ->assertJsonPath('data.total', 1);
+
+    $profile = VendorProfile::query()->where('user_id', $vendor->id)->firstOrFail();
+    expect($profile->feedback_total_count)->toBeGreaterThanOrEqual(1);
+});
+
+test('vendor and buyer reply limits', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+
+    $feedback = Feedback::query()->updateOrCreate(
+        [
+            'vendor_id' => $vendor->id,
+            'user_id' => $buyer->id,
+        ],
+        [
             'feedback_type' => 'positive',
-            'feedback' => 'Great seller experience overall.',
-        ])->assertUnauthorized();
-    }
-
-    public function test_vendor_cannot_leave_feedback_on_own_shop(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        Sanctum::actingAs($vendor);
-
-        $this->postJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback", [
-            'feedback_type' => 'positive',
-            'feedback' => 'Great seller experience overall.',
-        ])->assertStatus(422);
-    }
-
-    public function test_buyer_submits_pending_feedback_and_admin_approval_publishes_it(): void
-    {
-        Mail::shouldReceive('raw')
-            ->once()
-            ->withArgs(fn (string $body) => str_contains($body, 'seller feedback'));
-
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-
-        Feedback::query()->where('vendor_id', $vendor->id)->where('user_id', $buyer->id)->delete();
-
-        Sanctum::actingAs($buyer);
-
-        $this->postJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback", [
-            'feedback_type' => 'positive',
-            'feedback' => 'Excellent communication and fast delivery.',
+            'feedback' => 'Approved feedback for reply test.',
+            'moderation_status' => 'approved',
+            'status' => 'unread',
             'rating' => 5,
-        ])->assertCreated()
-            ->assertJsonPath('data.moderation_status', 'pending');
+        ],
+    );
 
-        $this->getJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback")
-            ->assertOk()
-            ->assertJsonPath('data.total', 0);
+    Sanctum::actingAs($vendor);
 
-        Sanctum::actingAs($admin);
+    $this->postJson("/api/v1/vendor/feedback/{$feedback->id}/reply", [
+        'body' => 'Thank you for your kind words.',
+    ])->assertOk();
 
-        $feedbackId = Feedback::query()
-            ->where('vendor_id', $vendor->id)
-            ->where('user_id', $buyer->id)
-            ->value('id');
+    $this->postJson("/api/v1/vendor/feedback/{$feedback->id}/reply", [
+        'body' => 'Second reply should fail.',
+    ])->assertStatus(422);
 
-        $this->patchJson("/api/v1/admin/feedback/{$feedbackId}", [
-            'action' => 'approve',
-        ])->assertOk()
-            ->assertJsonPath('data.moderation_status', 'approved');
+    Sanctum::actingAs($buyer);
 
-        $this->getJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback")
-            ->assertOk()
-            ->assertJsonPath('data.total', 1);
+    $this->postJson("/api/v1/account/feedback/{$feedback->id}/reply", [
+        'body' => 'Appreciate the quick response.',
+    ])->assertOk();
 
-        $profile = VendorProfile::query()->where('user_id', $vendor->id)->firstOrFail();
-        $this->assertGreaterThanOrEqual(1, $profile->feedback_total_count);
-    }
+    expect(FeedbackReply::query()->where('feedback_id', $feedback->id)->count())->toBe(2);
+});
 
-    public function test_vendor_and_buyer_reply_limits(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+test('vendor can open dispute and admin can resolve', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
 
-        $feedback = Feedback::query()->updateOrCreate(
-            [
-                'vendor_id' => $vendor->id,
-                'user_id' => $buyer->id,
-            ],
-            [
-                'feedback_type' => 'positive',
-                'feedback' => 'Approved feedback for reply test.',
-                'moderation_status' => 'approved',
-                'status' => 'unread',
-                'rating' => 5,
-            ],
-        );
+    $feedback = Feedback::query()->updateOrCreate(
+        [
+            'vendor_id' => $vendor->id,
+            'user_id' => $buyer->id,
+        ],
+        [
+            'feedback_type' => 'negative',
+            'feedback' => 'Disputed feedback sample text.',
+            'moderation_status' => 'approved',
+            'status' => 'unread',
+        ],
+    );
 
-        Sanctum::actingAs($vendor);
+    FeedbackDispute::query()->where('feedback_id', $feedback->id)->delete();
 
-        $this->postJson("/api/v1/vendor/feedback/{$feedback->id}/reply", [
-            'body' => 'Thank you for your kind words.',
-        ])->assertOk();
+    Sanctum::actingAs($vendor);
 
-        $this->postJson("/api/v1/vendor/feedback/{$feedback->id}/reply", [
-            'body' => 'Second reply should fail.',
-        ])->assertStatus(422);
+    $this->postJson("/api/v1/vendor/feedback/{$feedback->id}/dispute", [
+        'reason' => 'This feedback contains inaccurate claims about my shop.',
+    ])->assertCreated();
 
-        Sanctum::actingAs($buyer);
+    Sanctum::actingAs($admin);
 
-        $this->postJson("/api/v1/account/feedback/{$feedback->id}/reply", [
-            'body' => 'Appreciate the quick response.',
-        ])->assertOk();
+    $disputeId = FeedbackDispute::query()->where('feedback_id', $feedback->id)->value('id');
 
-        $this->assertSame(2, FeedbackReply::query()->where('feedback_id', $feedback->id)->count());
-    }
+    $this->patchJson("/api/v1/admin/feedback-disputes/{$disputeId}", [
+        'resolution' => 'dismissed',
+        'admin_note' => 'Feedback stands after review.',
+    ])->assertOk()
+        ->assertJsonPath('data.status', 'dismissed');
+});
 
-    public function test_vendor_can_open_dispute_and_admin_can_resolve(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+test('admin can hide approved feedback', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
 
-        $feedback = Feedback::query()->updateOrCreate(
-            [
-                'vendor_id' => $vendor->id,
-                'user_id' => $buyer->id,
-            ],
-            [
-                'feedback_type' => 'negative',
-                'feedback' => 'Disputed feedback sample text.',
-                'moderation_status' => 'approved',
-                'status' => 'unread',
-            ],
-        );
+    $feedback = Feedback::query()->updateOrCreate(
+        [
+            'vendor_id' => $vendor->id,
+            'user_id' => $buyer->id,
+        ],
+        [
+            'feedback_type' => 'negative',
+            'feedback' => 'Feedback to hide after approval.',
+            'moderation_status' => 'approved',
+            'status' => 'unread',
+            'rating' => 2,
+        ],
+    );
 
-        FeedbackDispute::query()->where('feedback_id', $feedback->id)->delete();
+    Sanctum::actingAs($admin);
 
-        Sanctum::actingAs($vendor);
+    $this->patchJson("/api/v1/admin/feedback/{$feedback->id}", [
+        'action' => 'hide',
+        'rejection_reason' => 'Violates marketplace guidelines.',
+    ])->assertOk()
+        ->assertJsonPath('data.moderation_status', 'rejected');
 
-        $this->postJson("/api/v1/vendor/feedback/{$feedback->id}/dispute", [
-            'reason' => 'This feedback contains inaccurate claims about my shop.',
-        ])->assertCreated();
+    $this->getJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback")
+        ->assertOk()
+        ->assertJsonPath('data.total', 0);
+});
 
-        Sanctum::actingAs($admin);
+test('feedback image upload is stored', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
 
-        $disputeId = FeedbackDispute::query()->where('feedback_id', $feedback->id)->value('id');
+    Feedback::query()->where('vendor_id', $vendor->id)->where('user_id', $admin->id)->delete();
 
-        $this->patchJson("/api/v1/admin/feedback-disputes/{$disputeId}", [
-            'resolution' => 'dismissed',
-            'admin_note' => 'Feedback stands after review.',
-        ])->assertOk()
-            ->assertJsonPath('data.status', 'dismissed');
-    }
+    Sanctum::actingAs($admin);
 
-    public function test_admin_can_hide_approved_feedback(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $this->post("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback", [
+        'feedback_type' => 'positive',
+        'feedback' => 'Item matched the photos I attached.',
+        'rating' => 5,
+        'image' => UploadedFile::fake()->image('item.jpg'),
+    ], [
+        'Accept' => 'application/json',
+    ])->assertCreated()
+        ->assertJsonPath('data.moderation_status', 'pending');
 
-        $feedback = Feedback::query()->updateOrCreate(
-            [
-                'vendor_id' => $vendor->id,
-                'user_id' => $buyer->id,
-            ],
-            [
-                'feedback_type' => 'negative',
-                'feedback' => 'Feedback to hide after approval.',
-                'moderation_status' => 'approved',
-                'status' => 'unread',
-                'rating' => 2,
-            ],
-        );
+    expect(Feedback::query()
+        ->where('vendor_id', $vendor->id)
+        ->where('user_id', $admin->id)
+        ->value('image_path'))->not->toBeNull();
+});
 
-        Sanctum::actingAs($admin);
+test('vendor can report buyer feedback', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $feedback = Feedback::query()
+        ->where('vendor_id', $vendor->id)
+        ->where('user_id', '!=', $vendor->id)
+        ->where('moderation_status', 'approved')
+        ->firstOrFail();
 
-        $this->patchJson("/api/v1/admin/feedback/{$feedback->id}", [
-            'action' => 'hide',
-            'rejection_reason' => 'Violates marketplace guidelines.',
-        ])->assertOk()
-            ->assertJsonPath('data.moderation_status', 'rejected');
+    Sanctum::actingAs($vendor);
 
-        $this->getJson("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback")
-            ->assertOk()
-            ->assertJsonPath('data.total', 0);
-    }
+    $this->postJson("/api/v1/feedbacks/{$feedback->id}/report", [
+        'description' => 'This feedback contains false claims about my shop.',
+        'context' => 'vendor',
+    ])->assertOk()
+        ->assertJsonPath('success', true);
 
-    public function test_feedback_image_upload_is_stored(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $this->assertDatabaseHas('abuse_reports', [
+        'reporter_id' => $vendor->id,
+        'item_id' => $feedback->id,
+        'report_type' => 'feedback',
+        'status' => 'pending',
+    ]);
 
-        Feedback::query()->where('vendor_id', $vendor->id)->where('user_id', $admin->id)->delete();
+    Sanctum::actingAs($buyer);
 
-        Sanctum::actingAs($admin);
-
-        $this->post("/api/v1/vendors/{$vendor->vendorProfile->slug}/feedback", [
-            'feedback_type' => 'positive',
-            'feedback' => 'Item matched the photos I attached.',
-            'rating' => 5,
-            'image' => UploadedFile::fake()->image('item.jpg'),
-        ], [
-            'Accept' => 'application/json',
-        ])->assertCreated()
-            ->assertJsonPath('data.moderation_status', 'pending');
-
-        $this->assertNotNull(
-            Feedback::query()
-                ->where('vendor_id', $vendor->id)
-                ->where('user_id', $admin->id)
-                ->value('image_path'),
-        );
-    }
-
-    public function test_vendor_can_report_buyer_feedback(): void
-    {
-        $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-        $feedback = Feedback::query()
-            ->where('vendor_id', $vendor->id)
-            ->where('user_id', '!=', $vendor->id)
-            ->where('moderation_status', 'approved')
-            ->firstOrFail();
-
-        Sanctum::actingAs($vendor);
-
-        $this->postJson("/api/v1/feedbacks/{$feedback->id}/report", [
-            'description' => 'This feedback contains false claims about my shop.',
-            'context' => 'vendor',
-        ])->assertOk()
-            ->assertJsonPath('success', true);
-
-        $this->assertDatabaseHas('abuse_reports', [
-            'reporter_id' => $vendor->id,
-            'item_id' => $feedback->id,
-            'report_type' => 'feedback',
-            'status' => 'pending',
-        ]);
-
-        Sanctum::actingAs($buyer);
-
-        $this->postJson("/api/v1/feedbacks/{$feedback->id}/report", [
-            'description' => 'Attempting to report own feedback should fail.',
-            'context' => 'buyer',
-        ])->assertStatus(422);
-    }
-}
+    $this->postJson("/api/v1/feedbacks/{$feedback->id}/report", [
+        'description' => 'Attempting to report own feedback should fail.',
+        'context' => 'buyer',
+    ])->assertStatus(422);
+});

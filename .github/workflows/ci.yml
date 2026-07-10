@@ -61,4 +61,4 @@ jobs:
           APP_ENV: testing
           DB_CONNECTION: sqlite
           DB_DATABASE: ':memory:'
-        run: php artisan test --colors=never
+        run: ./vendor/bin/pest --colors=never

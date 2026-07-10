@@ -1,41 +1,32 @@
 <?php
 
-namespace Tests\Feature\Api\V1;
-
 use App\Models\User;
 use App\Services\Auth\RolePermissionSync;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
-use Tests\TestCase;
 
-class VendorPermissionSyncTest extends TestCase
-{
-    use RefreshDatabase;
+uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
-    public function test_vendor_role_without_permissions_is_repaired_by_sync(): void
-    {
-        Role::findOrCreate('vendor', 'web')->syncPermissions([]);
+test('vendor role without permissions is repaired by sync', function () {
+    Role::findOrCreate('vendor', 'web')->syncPermissions([]);
 
-        $vendor = User::factory()->create();
-        $vendor->syncRoles(['vendor']);
+    $vendor = User::factory()->create();
+    $vendor->syncRoles(['vendor']);
 
-        $this->assertFalse($vendor->can('vendor'));
+    expect($vendor->can('vendor'))->toBeFalse();
 
-        app(RolePermissionSync::class)->sync();
+    app(RolePermissionSync::class)->sync();
 
-        $vendor->refresh();
-        $this->assertTrue($vendor->can('vendor'));
-    }
+    $vendor->refresh();
+    expect($vendor->can('vendor'))->toBeTrue();
+});
 
-    public function test_vendor_with_synced_permissions_can_access_vendor_orders(): void
-    {
-        app(RolePermissionSync::class)->sync();
+test('vendor with synced permissions can access vendor orders', function () {
+    app(RolePermissionSync::class)->sync();
 
-        $vendor = User::factory()->create();
-        $vendor->syncRoles(['vendor']);
+    $vendor = User::factory()->create();
+    $vendor->syncRoles(['vendor']);
 
-        $this->actingAs($vendor, 'sanctum')
-            ->getJson('/api/v1/vendor/orders')
-            ->assertOk();
-    }
-}
+    $this->actingAs($vendor, 'sanctum')
+        ->getJson('/api/v1/vendor/orders')
+        ->assertOk();
+});

@@ -1,85 +1,74 @@
 <?php
 
-namespace Tests\Feature\Api\V1;
-
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
-use Tests\TestCase;
 
-class AdminShopOpeningTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('admin lists shop opening requests with status filter', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    Sanctum::actingAs($admin);
 
-    public function test_admin_lists_shop_opening_requests_with_status_filter(): void
-    {
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-        Sanctum::actingAs($admin);
-
-        $this->getJson('/api/v1/admin/shop-opening/requests')
-            ->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('data.data.0.id', $buyer->id)
-            ->assertJsonPath('data.data.0.shop_opening_status', 1)
-            ->assertJsonStructure([
+    $this->getJson('/api/v1/admin/shop-opening/requests')
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('data.data.0.id', $buyer->id)
+        ->assertJsonPath('data.data.0.shop_opening_status', 1)
+        ->assertJsonStructure([
+            'data' => [
                 'data' => [
-                    'data' => [
-                        [
-                            'id',
-                            'shop_name',
-                            'location_label',
-                            'vendor_documents',
-                            'shop_opening_status',
-                        ],
+                    [
+                        'id',
+                        'shop_name',
+                        'location_label',
+                        'vendor_documents',
+                        'shop_opening_status',
                     ],
-                    'total',
-                    'current_page',
-                    'last_page',
                 ],
-            ]);
+                'total',
+                'current_page',
+                'last_page',
+            ],
+        ]);
 
-        $this->getJson('/api/v1/admin/shop-opening/requests?status=2')
-            ->assertOk()
-            ->assertJsonPath('data.total', 0);
-    }
+    $this->getJson('/api/v1/admin/shop-opening/requests?status=2')
+        ->assertOk()
+        ->assertJsonPath('data.total', 0);
+});
 
-    public function test_admin_can_approve_and_reject_shop_opening_requests(): void
-    {
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-        Sanctum::actingAs($admin);
+test('admin can approve and reject shop opening requests', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    Sanctum::actingAs($admin);
 
-        $this->postJson("/api/v1/admin/shop-opening/requests/{$buyer->id}/reject", [
-            'status' => 2,
-            'reason' => 'Incomplete documents',
-        ])
-            ->assertOk()
-            ->assertJsonPath('data.shop_opening_status', 2)
-            ->assertJsonPath('data.shop_opening_rejection_reason', 'Incomplete documents');
+    $this->postJson("/api/v1/admin/shop-opening/requests/{$buyer->id}/reject", [
+        'status' => 2,
+        'reason' => 'Incomplete documents',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.shop_opening_status', 2)
+        ->assertJsonPath('data.shop_opening_rejection_reason', 'Incomplete documents');
 
-        $this->postJson("/api/v1/admin/shop-opening/requests/{$buyer->id}/approve")
-            ->assertOk()
-            ->assertJsonPath('data.shop_opening_status', 0);
+    $this->postJson("/api/v1/admin/shop-opening/requests/{$buyer->id}/approve")
+        ->assertOk()
+        ->assertJsonPath('data.shop_opening_status', 0);
 
-        $buyer->refresh();
-        $this->assertSame(0, $buyer->shop_opening_status);
-        $this->assertTrue($buyer->hasRole('vendor'));
-    }
+    $buyer->refresh();
+    expect($buyer->shop_opening_status)->toBe(0);
+    expect($buyer->hasRole('vendor'))->toBeTrue();
+});
 
-    public function test_legacy_importer_maps_shop_opening_fields(): void
-    {
-        $path = tempnam(sys_get_temp_dir(), 'shop-opening-users-dump');
-        $documents = addslashes(serialize([
-            ['name' => 'ID card', 'path' => 'uploads/support/id.jpg'],
-            ['name' => 'Selfie', 'path' => 'uploads/support/selfie.jpg'],
-        ]));
+test('legacy importer maps shop opening fields', function () {
+    $path = tempnam(sys_get_temp_dir(), 'shop-opening-users-dump');
+    $documents = addslashes(serialize([
+        ['name' => 'ID card', 'path' => 'uploads/support/id.jpg'],
+        ['name' => 'Selfie', 'path' => 'uploads/support/selfie.jpg'],
+    ]));
 
-        file_put_contents($path, <<<SQL
+    file_put_contents($path, <<<SQL
 CREATE TABLE `users` (
   `id` int NOT NULL AUTO_INCREMENT,
   `username` varchar(255) DEFAULT NULL,
@@ -112,30 +101,29 @@ VALUES
 (502,'Rejected Shop','rejected-shop','rejected-shop@example.com',1,'hash',3,0,0,'Rejected','Seller','+2348000000002','Rejected shop',2,'{$documents}','2024-04-01 10:00:00','Missing proof of address','2024-04-01 10:00:00','2024-04-01 10:00:00');
 SQL);
 
-        $this->artisan('selloff:migrate', ['--fresh' => true]);
-        $this->artisan('selloff:import-legacy-data', ['--source' => $path])->assertSuccessful();
-        unlink($path);
+    $this->artisan('selloff:migrate', ['--fresh' => true]);
+    $this->artisan('selloff:import-legacy-data', ['--source' => $path])->assertSuccessful();
+    unlink($path);
 
-        $pending = User::query()->findOrFail(501);
-        $this->assertSame(1, $pending->shop_opening_status);
-        $this->assertCount(2, $pending->vendor_documents);
-        $this->assertNotNull($pending->shop_request_date);
+    $pending = User::query()->findOrFail(501);
+    expect($pending->shop_opening_status)->toBe(1);
+    expect($pending->vendor_documents)->toHaveCount(2);
+    expect($pending->shop_request_date)->not->toBeNull();
 
-        $rejected = User::query()->findOrFail(502);
-        $this->assertSame(2, $rejected->shop_opening_status);
-        $this->assertSame('Missing proof of address', $rejected->shop_opening_rejection_reason);
+    $rejected = User::query()->findOrFail(502);
+    expect($rejected->shop_opening_status)->toBe(2);
+    expect($rejected->shop_opening_rejection_reason)->toBe('Missing proof of address');
 
-        $admin = User::factory()->create();
-        $admin->syncRoles(['super-admin']);
-        Sanctum::actingAs($admin);
+    $admin = User::factory()->create();
+    $admin->syncRoles(['super-admin']);
+    Sanctum::actingAs($admin);
 
-        $this->getJson('/api/v1/admin/shop-opening/requests')
-            ->assertOk()
-            ->assertJsonPath('data.total', 2);
+    $this->getJson('/api/v1/admin/shop-opening/requests')
+        ->assertOk()
+        ->assertJsonPath('data.total', 2);
 
-        $this->getJson('/api/v1/admin/shop-opening/requests?status=1')
-            ->assertOk()
-            ->assertJsonPath('data.total', 1)
-            ->assertJsonPath('data.data.0.id', 501);
-    }
-}
+    $this->getJson('/api/v1/admin/shop-opening/requests?status=1')
+        ->assertOk()
+        ->assertJsonPath('data.total', 1)
+        ->assertJsonPath('data.data.0.id', 501);
+});

@@ -1,40 +1,30 @@
 <?php
 
-namespace Tests\Unit\LegacyImport;
-
 use App\LegacyImport\Support\LegacyRolePermissionMapper;
-use Tests\TestCase;
 
-class LegacyRolePermissionMapperTest extends TestCase
-{
-    public function test_slugs_from_legacy_csv_maps_one_based_indexes(): void
-    {
-        $slugs = LegacyRolePermissionMapper::slugsFromLegacyCsv('1,2,18');
+test('slugs from legacy csv maps one based indexes', function () {
+    $slugs = LegacyRolePermissionMapper::slugsFromLegacyCsv('1,2,18');
 
-        $this->assertSame(['admin_panel', 'vendor', 'membership'], $slugs);
-    }
+    expect($slugs)->toBe(['admin_panel', 'vendor', 'membership']);
+});
 
-    public function test_slugs_from_all_returns_full_legacy_permission_list(): void
-    {
-        $slugs = LegacyRolePermissionMapper::slugsFromLegacyCsv('all');
+test('slugs from all returns full legacy permission list', function () {
+    $slugs = LegacyRolePermissionMapper::slugsFromLegacyCsv('all');
 
-        $this->assertSame(config('selloff.legacy_role_permissions'), $slugs);
-    }
+    expect($slugs)->toBe(config('selloff.legacy_role_permissions'));
+});
 
-    public function test_spatie_role_name_maps_known_legacy_ids(): void
-    {
-        $row = ['role_name' => 'a:1:{i:0;a:2:{s:7:"lang_id";s:1:"1";s:4:"name";s:5:"Admin";}}'];
+test('spatie role name maps known legacy ids', function () {
+    $row = ['role_name' => 'a:1:{i:0;a:2:{s:7:"lang_id";s:1:"1";s:4:"name";s:5:"Admin";}}'];
 
-        $this->assertSame('super-admin', LegacyRolePermissionMapper::spatieRoleName(1, $row));
-        $this->assertSame('vendor', LegacyRolePermissionMapper::spatieRoleName(2, $row));
-        $this->assertSame('member', LegacyRolePermissionMapper::spatieRoleName(3, $row));
-        $this->assertSame('admin', LegacyRolePermissionMapper::spatieRoleName(5, $row));
-    }
+    expect(LegacyRolePermissionMapper::spatieRoleName(1, $row))->toBe('super-admin');
+    expect(LegacyRolePermissionMapper::spatieRoleName(2, $row))->toBe('vendor');
+    expect(LegacyRolePermissionMapper::spatieRoleName(3, $row))->toBe('member');
+    expect(LegacyRolePermissionMapper::spatieRoleName(5, $row))->toBe('admin');
+});
 
-    public function test_spatie_role_name_slugifies_custom_roles(): void
-    {
-        $row = ['role_name' => 'a:1:{i:0;a:2:{s:7:"lang_id";s:1:"1";s:4:"name";s:16:"Customer Success";}}'];
+test('spatie role name slugifies custom roles', function () {
+    $row = ['role_name' => 'a:1:{i:0;a:2:{s:7:"lang_id";s:1:"1";s:4:"name";s:16:"Customer Success";}}'];
 
-        $this->assertSame('customer-success', LegacyRolePermissionMapper::spatieRoleName(4, $row));
-    }
-}
+    expect(LegacyRolePermissionMapper::spatieRoleName(4, $row))->toBe('customer-success');
+});

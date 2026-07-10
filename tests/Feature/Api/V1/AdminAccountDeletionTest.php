@@ -1,53 +1,43 @@
 <?php
 
-namespace Tests\Feature\Api\V1;
-
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
-use Tests\TestCase;
 
-class AdminAccountDeletionTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('admin lists account deletion requests', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $buyer->update(['account_delete_requested_at' => now()]);
+    Sanctum::actingAs($admin);
 
-    public function test_admin_lists_account_deletion_requests(): void
-    {
-        $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
-        $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
-        $buyer->update(['account_delete_requested_at' => now()]);
-        Sanctum::actingAs($admin);
-
-        $this->getJson('/api/v1/admin/account-deletion-requests')
-            ->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonFragment(['email' => 'buyer@selloff.test'])
-            ->assertJsonStructure([
+    $this->getJson('/api/v1/admin/account-deletion-requests')
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonFragment(['email' => 'buyer@selloff.test'])
+        ->assertJsonStructure([
+            'data' => [
                 'data' => [
-                    'data' => [
-                        [
-                            'id',
-                            'email',
-                            'account_delete_requested_at',
-                            'primary_role',
-                        ],
+                    [
+                        'id',
+                        'email',
+                        'account_delete_requested_at',
+                        'primary_role',
                     ],
-                    'total',
-                    'current_page',
-                    'last_page',
                 ],
-            ]);
-    }
+                'total',
+                'current_page',
+                'last_page',
+            ],
+        ]);
+});
 
-    public function test_legacy_importer_maps_account_deletion_request_fields(): void
-    {
-        $path = tempnam(sys_get_temp_dir(), 'account-delete-users-dump');
+test('legacy importer maps account deletion request fields', function () {
+    $path = tempnam(sys_get_temp_dir(), 'account-delete-users-dump');
 
-        file_put_contents($path, <<<'SQL'
+    file_put_contents($path, <<<'SQL'
 CREATE TABLE `users` (
   `id` int NOT NULL AUTO_INCREMENT,
   `username` varchar(255) DEFAULT NULL,
@@ -73,24 +63,23 @@ VALUES
 (602,'Keep Me','keep-me','keep-me@example.com',1,'hash',3,0,0,'Keep','Me',0,NULL,'2024-06-01 10:00:00','2024-06-01 10:00:00');
 SQL);
 
-        $this->artisan('selloff:migrate', ['--fresh' => true]);
-        $this->artisan('selloff:import-legacy-data', ['--source' => $path])->assertSuccessful();
-        unlink($path);
+    $this->artisan('selloff:migrate', ['--fresh' => true]);
+    $this->artisan('selloff:import-legacy-data', ['--source' => $path])->assertSuccessful();
+    unlink($path);
 
-        $pending = User::query()->findOrFail(601);
-        $this->assertNotNull($pending->account_delete_requested_at);
-        $this->assertSame('2024-06-15 12:00:00', $pending->account_delete_requested_at?->format('Y-m-d H:i:s'));
+    $pending = User::query()->findOrFail(601);
+    expect($pending->account_delete_requested_at)->not->toBeNull();
+    expect($pending->account_delete_requested_at?->format('Y-m-d H:i:s'))->toBe('2024-06-15 12:00:00');
 
-        $active = User::query()->findOrFail(602);
-        $this->assertNull($active->account_delete_requested_at);
+    $active = User::query()->findOrFail(602);
+    expect($active->account_delete_requested_at)->toBeNull();
 
-        $admin = User::factory()->create();
-        $admin->syncRoles(['super-admin']);
-        Sanctum::actingAs($admin);
+    $admin = User::factory()->create();
+    $admin->syncRoles(['super-admin']);
+    Sanctum::actingAs($admin);
 
-        $this->getJson('/api/v1/admin/account-deletion-requests')
-            ->assertOk()
-            ->assertJsonPath('data.total', 1)
-            ->assertJsonPath('data.data.0.id', 601);
-    }
-}
+    $this->getJson('/api/v1/admin/account-deletion-requests')
+        ->assertOk()
+        ->assertJsonPath('data.total', 1)
+        ->assertJsonPath('data.data.0.id', 601);
+});

@@ -1,44 +1,31 @@
 <?php
 
-namespace Tests\Feature\Schema;
-
 use App\Models\User;
 use App\Modules\Selloff\Catalog\Models\Product;
 use App\Modules\Selloff\Promotion\Models\Coupon;
 use Illuminate\Support\Facades\Schema;
-use Tests\TestCase;
 
-class Pass2MigrationTest extends TestCase
-{
-    public function test_pass2_schema_migrations_and_demo_seed(): void
-    {
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true])
-            ->assertExitCode(0);
+test('pass2 schema migrations and demo seed', function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true])
+        ->assertExitCode(0);
 
-        $this->assertTrue(Schema::hasTable('products'));
-        $this->assertTrue(Schema::hasColumn('products', 'is_deleted'));
-        $this->assertTrue(Schema::hasColumn('products', 'is_draft'));
-        $this->assertTrue(Schema::hasColumn('products', 'is_special_offer'));
-        $this->assertTrue(Schema::hasTable('orders'));
-        $this->assertTrue(Schema::hasTable('legacy_import_maps'));
-        $this->assertTrue(Schema::hasTable('vendor_profiles'));
-        $this->assertTrue(Schema::hasTable('escrow_transactions'));
+    expect(Schema::hasTable('products'))->toBeTrue();
+    expect(Schema::hasColumn('products', 'is_deleted'))->toBeTrue();
+    expect(Schema::hasColumn('products', 'is_draft'))->toBeTrue();
+    expect(Schema::hasColumn('products', 'is_special_offer'))->toBeTrue();
+    expect(Schema::hasTable('orders'))->toBeTrue();
+    expect(Schema::hasTable('legacy_import_maps'))->toBeTrue();
+    expect(Schema::hasTable('vendor_profiles'))->toBeTrue();
+    expect(Schema::hasTable('escrow_transactions'))->toBeTrue();
 
-        $this->assertGreaterThanOrEqual(40, Product::query()->count());
-        $this->assertDatabaseHas('vendor_profiles', ['shop_name' => 'Demo Electronics']);
-        $this->assertDatabaseHas('vendor_profiles', ['shop_name' => 'Demo Fashion Hub']);
-        $this->assertDatabaseHas('vendor_profiles', ['shop_name' => 'Lagos Home & Living']);
-        $this->assertDatabaseHas('coupons', ['coupon_code' => 'DEMO10']);
-        $this->assertGreaterThanOrEqual(
-            14,
-            Product::query()->whereHas('vendor', fn ($q) => $q->where('email', 'vendor@selloff.test'))->count(),
-        );
-        $this->assertGreaterThanOrEqual(
-            8,
-            Product::query()->whereHas('vendor', fn ($q) => $q->where('email', 'vendor2@selloff.test'))->count(),
-        );
-        $this->assertGreaterThanOrEqual(6, User::role('vendor')->count());
-        $this->assertSame(1, Coupon::query()->where('coupon_code', 'DEMO10')->count());
-        $this->assertGreaterThanOrEqual(2, \App\Modules\Selloff\Order\Models\Order::query()->count());
-    }
-}
+    expect(Product::query()->count())->toBeGreaterThanOrEqual(40);
+    $this->assertDatabaseHas('vendor_profiles', ['shop_name' => 'Demo Electronics']);
+    $this->assertDatabaseHas('vendor_profiles', ['shop_name' => 'Demo Fashion Hub']);
+    $this->assertDatabaseHas('vendor_profiles', ['shop_name' => 'Lagos Home & Living']);
+    $this->assertDatabaseHas('coupons', ['coupon_code' => 'DEMO10']);
+    expect(Product::query()->whereHas('vendor', fn ($q) => $q->where('email', 'vendor@selloff.test'))->count())->toBeGreaterThanOrEqual(14);
+    expect(Product::query()->whereHas('vendor', fn ($q) => $q->where('email', 'vendor2@selloff.test'))->count())->toBeGreaterThanOrEqual(8);
+    expect(User::role('vendor')->count())->toBeGreaterThanOrEqual(6);
+    expect(Coupon::query()->where('coupon_code', 'DEMO10')->count())->toBe(1);
+    expect(\App\Modules\Selloff\Order\Models\Order::query()->count())->toBeGreaterThanOrEqual(2);
+});

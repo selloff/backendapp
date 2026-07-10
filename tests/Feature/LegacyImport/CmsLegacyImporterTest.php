@@ -1,25 +1,16 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use App\LegacyImport\Importers\CmsLegacyImporter;
 use App\LegacyImport\LegacyImportContext;
 use App\LegacyImport\MySqlDumpReader;
-use Tests\TestCase;
 
-class CmsLegacyImporterTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
-
-    public function test_imports_slider_ad_spaces_and_mobile_banners(): void
-    {
-        $dumpPath = storage_path('app/test-cms-import.sql');
-        file_put_contents($dumpPath, <<<'SQL'
+test('imports slider ad spaces and mobile banners', function () {
+    $dumpPath = storage_path('app/test-cms-import.sql');
+    file_put_contents($dumpPath, <<<'SQL'
 CREATE TABLE `slider` (
   `id` int NOT NULL,
   `lang_id` tinyint DEFAULT '1',
@@ -92,40 +83,39 @@ VALUES
 (3,'uploads/mobile/ad.webp','https://selloff.ng/mobile',1,1,0,0,'2025-01-01 00:00:00');
 SQL);
 
-        app(CmsLegacyImporter::class)->import(
-            new LegacyImportContext(dryRun: false),
-            new MySqlDumpReader($dumpPath),
-        );
+    app(CmsLegacyImporter::class)->import(
+        new LegacyImportContext(dryRun: false),
+        new MySqlDumpReader($dumpPath),
+    );
 
-        $this->assertDatabaseHas('sliders', [
-            'id' => 1,
-            'title' => 'Hero slide',
-            'image_path' => 'uploads/slider/hero.webp',
-            'image_mobile_path' => 'uploads/slider/hero-mobile.webp',
-            'legacy_id' => 1,
-        ]);
+    $this->assertDatabaseHas('sliders', [
+        'id' => 1,
+        'title' => 'Hero slide',
+        'image_path' => 'uploads/slider/hero.webp',
+        'image_mobile_path' => 'uploads/slider/hero-mobile.webp',
+        'legacy_id' => 1,
+    ]);
 
-        $this->assertDatabaseHas('ad_spaces', [
-            'id' => 1,
-            'ad_space_key' => 'index_1',
-            'desktop_width' => 728,
-            'legacy_id' => 1,
-        ]);
+    $this->assertDatabaseHas('ad_spaces', [
+        'id' => 1,
+        'ad_space_key' => 'index_1',
+        'desktop_width' => 728,
+        'legacy_id' => 1,
+    ]);
 
-        $this->assertDatabaseHas('homepage_banners', [
-            'id' => 2,
-            'link' => 'https://selloff.ng/promo',
-            'banner_location' => 'featured_products',
-            'legacy_id' => 2,
-        ]);
+    $this->assertDatabaseHas('homepage_banners', [
+        'id' => 2,
+        'link' => 'https://selloff.ng/promo',
+        'banner_location' => 'featured_products',
+        'legacy_id' => 2,
+    ]);
 
-        $this->assertDatabaseHas('homepage_banners', [
-            'id' => 1_000_030,
-            'image_path' => 'uploads/mobile/ad.webp',
-            'banner_location' => 'mobile_home',
-            'legacy_id' => 3,
-        ]);
+    $this->assertDatabaseHas('homepage_banners', [
+        'id' => 1_000_030,
+        'image_path' => 'uploads/mobile/ad.webp',
+        'banner_location' => 'mobile_home',
+        'legacy_id' => 3,
+    ]);
 
-        @unlink($dumpPath);
-    }
-}
+    @unlink($dumpPath);
+});

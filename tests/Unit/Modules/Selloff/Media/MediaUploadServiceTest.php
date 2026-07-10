@@ -1,0 +1,130 @@
+<?php
+
+use App\Services\Media\MediaUploadService;
+use App\Services\Media\Upload\MediaUploadRegistry;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+
+uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
+
+test('product variant path rewrites width prefix', function () {
+    $service = app(MediaUploadService::class);
+
+    $defaultPath = '202604/img_w960_abc123.webp';
+
+    expect($service->productVariantPath($defaultPath, 'small'))->toBe('202604/img_w480_abc123.webp');
+    expect($service->productVariantPath($defaultPath, 'big'))->toBe('202604/img_w1600_abc123.webp');
+    expect($service->productVariantPath($defaultPath))->toBe($defaultPath);
+});
+
+test('product variant path leaves external urls unchanged', function () {
+    $service = app(MediaUploadService::class);
+    $url = 'https://images.unsplash.com/photo-123.jpg';
+
+    expect($service->productVariantPath($url, 'small'))->toBe($url);
+});
+
+test('url for product image builds variant urls on s3', function () {
+    config([
+        'filesystems.disks.s3.bucket' => 'selloff-prod',
+        'filesystems.disks.s3.region' => 'eu-west-2',
+        'filesystems.disks.s3.url' => null,
+    ]);
+
+    $service = app(MediaUploadService::class);
+    $url = $service->urlForProductImage('202604/img_w960_abc123.webp', 'aws_s3', 'small');
+
+    expect($url)->toBe('https://selloff-prod.s3.eu-west-2.amazonaws.com/uploads/images/202604/img_w480_abc123.webp');
+});
+
+test('profile upload stores optimized image under uploads profile', function () {
+    Storage::fake('public');
+    config(['selloff.media_disk' => 'public']);
+
+    $service = app(MediaUploadService::class);
+    $result = $service->upload(UploadedFile::fake()->image('avatar.jpg', 800, 800), 'profile');
+
+    expect($result['context'])->toBe('profile');
+    expect($result['path'])->toStartWith('uploads/profile/');
+    $this->assertStringContainsString('profile_', $result['filename']);
+    Storage::disk('public')->assertExists($result['path']);
+});
+
+test('product upload returns legacy relative path and variants', function () {
+    Storage::fake('public');
+    config(['selloff.media_disk' => 'public']);
+
+    $service = app(MediaUploadService::class);
+    $result = $service->upload(UploadedFile::fake()->image('product.jpg', 2000, 2000), 'product');
+
+    $this->assertStringNotContainsString('uploads/images/', $result['path']);
+    expect($result['path'])->toMatch('/^\d{6}\/img_w\d+_/');
+    expect($result)->toHaveKey('variants');
+    expect($result['variants'])->toHaveKey('small');
+    expect($result['variants'])->toHaveKey('default');
+    expect($result['variants'])->toHaveKey('big');
+
+    foreach ($result['variants'] as $variant) {
+        $storagePath = 'uploads/images/'.$variant['path'];
+        Storage::disk('public')->assertExists($storagePath);
+    }
+});
+
+test('vendor document upload uses support folder without date segment', function () {
+    Storage::fake('public');
+    config(['selloff.media_disk' => 'public']);
+
+    $service = app(MediaUploadService::class);
+    $result = $service->upload(
+        UploadedFile::fake()->create('id-card.pdf', 100, 'application/pdf'),
+        'vendor_document',
+    );
+
+    expect($result['path'])->toStartWith('uploads/support/file_');
+    $this->assertStringNotContainsString('/'.now()->format('Ym').'/', $result['path']);
+    Storage::disk('public')->assertExists($result['path']);
+});
+
+test('digital context alias maps to digital file folder', function () {
+    Storage::fake('public');
+    config(['selloff.media_disk' => 'public']);
+
+    $service = app(MediaUploadService::class);
+    $result = $service->upload(
+        UploadedFile::fake()->create('bundle.zip', 100, 'application/zip'),
+        'digital',
+    );
+
+    expect($result['context'])->toBe('digital_file');
+    expect($result['path'])->toStartWith('uploads/digital-files/digital-file-');
+    Storage::disk('public')->assertExists($result['path']);
+});
+
+test('slider upload stores optimized image under uploads slider', function () {
+    Storage::fake('public');
+    config(['selloff.media_disk' => 'public']);
+
+    $service = app(MediaUploadService::class);
+    $desktop = $service->upload(UploadedFile::fake()->image('slide.jpg', 2000, 800), 'slider');
+    $mobile = $service->upload(UploadedFile::fake()->image('slide-mobile.jpg', 800, 600), 'slider', 'mobile');
+
+    expect($desktop['context'])->toBe('slider');
+    expect($desktop['path'])->toStartWith('uploads/slider/');
+    $this->assertStringContainsString('slider_', $desktop['filename']);
+    Storage::disk('public')->assertExists($desktop['path']);
+
+    expect($mobile['context'])->toBe('slider');
+    expect($mobile['path'])->toStartWith('uploads/slider/');
+    Storage::disk('public')->assertExists($mobile['path']);
+});
+
+test('registry exposes all legacy upload contexts', function () {
+    $contexts = MediaUploadRegistry::contexts();
+
+    foreach ([
+        'temp', 'product', 'profile', 'blog', 'category', 'slider', 'newsletter',
+        'logo', 'favicon', 'attachment', 'vendor_document', 'digital_file',
+    ] as $expected) {
+        expect($contexts)->toContain($expected);
+    }
+});

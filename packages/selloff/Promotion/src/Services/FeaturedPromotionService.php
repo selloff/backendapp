@@ -364,9 +364,11 @@ class FeaturedPromotionService
      */
     private function applyPromotionToProduct(Product $product, array $quote): void
     {
-        $expiresAt = isset($quote['expires_at']) && is_string($quote['expires_at'])
-            ? \Illuminate\Support\Carbon::parse($quote['expires_at'])
-            : $quote['expires_at'];
+        $expiresAt = match (true) {
+            isset($quote['expires_at']) && is_string($quote['expires_at']) => \Illuminate\Support\Carbon::parse($quote['expires_at']),
+            isset($quote['expires_at']) && $quote['expires_at'] instanceof \DateTimeInterface => \Illuminate\Support\Carbon::instance($quote['expires_at']),
+            default => now()->addDays((int) ($quote['day_count'] ?? 7)),
+        };
 
         $product->update([
             'is_promoted' => true,

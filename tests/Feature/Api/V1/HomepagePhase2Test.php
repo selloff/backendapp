@@ -1,180 +1,164 @@
 <?php
 
-namespace Tests\Feature\Api\V1;
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-use Tests\TestCase;
+test('homepage returns selloff section order and settings', function () {
+    $response = $this->getJson('/api/v1/homepage')
+        ->assertOk()
+        ->assertJsonPath('success', true);
 
-class HomepagePhase2Test extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+    $data = $response->json('data');
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+    expect($data['settings']['index_products_per_row'])->toBe(5);
+    expect($data['settings']['product_grid_layout'])->toBe('rows');
+    expect($data['settings']['index_recommended_products_count'])->toBe(10);
+    expect($data['settings']['index_latest_products'])->toBeTrue();
+    expect($data['settings']['fea_categories_design'])->toBe('round_boxes');
+    expect($data['site_banners'])->toHaveKey('top');
+    expect($data['site_banners']['mid'])->toBeNull();
 
-    public function test_homepage_returns_selloff_section_order_and_settings(): void
-    {
-        $response = $this->getJson('/api/v1/homepage')
-            ->assertOk()
-            ->assertJsonPath('success', true);
+    $sectionKeys = collect($data['sections'])->pluck('key')->all();
+    expect($sectionKeys)->toContain('phones');
+    expect($sectionKeys)->toContain('laptops');
+    expect($sectionKeys)->toContain('other');
 
-        $data = $response->json('data');
+    $phones = collect($data['sections'])->firstWhere('key');
+    expect($phones['title'])->toBe('Latest Smartphones & Tablets');
+    expect($phones['products'])->not->toBeEmpty();
+});
 
-        $this->assertSame(5, $data['settings']['index_products_per_row']);
-        $this->assertSame('rows', $data['settings']['product_grid_layout']);
-        $this->assertSame(10, $data['settings']['index_recommended_products_count']);
-        $this->assertTrue($data['settings']['index_latest_products']);
-        $this->assertSame('round_boxes', $data['settings']['fea_categories_design']);
-        $this->assertArrayHasKey('top', $data['site_banners']);
-        $this->assertNull($data['site_banners']['mid']);
+test('homepage normalizes featured categories design values', function () {
+    app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
+        'fea_categories_design' => 'square_layout',
+    ], 'general');
 
-        $sectionKeys = collect($data['sections'])->pluck('key')->all();
-        $this->assertContains('phones', $sectionKeys);
-        $this->assertContains('laptops', $sectionKeys);
-        $this->assertContains('other', $sectionKeys);
+    $this->getJson('/api/v1/homepage')
+        ->assertOk()
+        ->assertJsonPath('data.settings.fea_categories_design', 'grid_layout');
 
-        $phones = collect($data['sections'])->firstWhere('key', 'phones');
-        $this->assertSame('Latest Smartphones & Tablets', $phones['title']);
-        $this->assertNotEmpty($phones['products']);
-    }
+    app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
+        'fea_categories_design' => 'round_layout',
+    ], 'general');
 
-    public function test_homepage_normalizes_featured_categories_design_values(): void
-    {
-        app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
-            'fea_categories_design' => 'square_layout',
-        ], 'general');
+    $this->getJson('/api/v1/homepage')
+        ->assertOk()
+        ->assertJsonPath('data.settings.fea_categories_design', 'round_boxes');
+});
 
-        $this->getJson('/api/v1/homepage')
-            ->assertOk()
-            ->assertJsonPath('data.settings.fea_categories_design', 'grid_layout');
+test('homepage normalizes product grid layout values', function () {
+    app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
+        'product_grid_layout' => 'masonry',
+    ], 'general');
 
-        app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
-            'fea_categories_design' => 'round_layout',
-        ], 'general');
+    $this->getJson('/api/v1/homepage')
+        ->assertOk()
+        ->assertJsonPath('data.settings.product_grid_layout', 'masonry');
 
-        $this->getJson('/api/v1/homepage')
-            ->assertOk()
-            ->assertJsonPath('data.settings.fea_categories_design', 'round_boxes');
-    }
+    app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
+        'product_grid_layout' => 'invalid',
+    ], 'general');
 
-    public function test_homepage_normalizes_product_grid_layout_values(): void
-    {
-        app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
-            'product_grid_layout' => 'masonry',
-        ], 'general');
+    $this->getJson('/api/v1/homepage')
+        ->assertOk()
+        ->assertJsonPath('data.settings.product_grid_layout', 'rows');
+});
 
-        $this->getJson('/api/v1/homepage')
-            ->assertOk()
-            ->assertJsonPath('data.settings.product_grid_layout', 'masonry');
+test('latest phone section orders by created at', function () {
+    $phonesCategory = \App\Modules\Selloff\Catalog\Models\Category::query()
+        ->where('slug', 'smartphones')
+        ->firstOrFail();
 
-        app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
-            'product_grid_layout' => 'invalid',
-        ], 'general');
+    $older = \App\Modules\Selloff\Catalog\Models\Product::query()->create([
+        'vendor_id' => \App\Models\User::query()->where('email', 'vendor@selloff.test')->value('id'),
+        'category_id' => $phonesCategory->id,
+        'slug' => 'older-phone-'.uniqid(),
+        'sku' => 'OLDER-PHONE',
+        'price' => 10000,
+        'status' => 'published',
+        'visibility' => 'visible',
+        'is_active' => true,
+        'is_verified' => true,
+        'type' => 'physical',
+        'listing_type' => 'ordinary_listing',
+        'created_at' => now()->subDays(30),
+        'updated_at' => now()->subDays(30),
+    ]);
+    $older->translations()->create([
+        'locale' => 'en',
+        'title' => 'Older Phone Listing',
+    ]);
 
-        $this->getJson('/api/v1/homepage')
-            ->assertOk()
-            ->assertJsonPath('data.settings.product_grid_layout', 'rows');
-    }
+    $newer = \App\Modules\Selloff\Catalog\Models\Product::query()->create([
+        'vendor_id' => $older->vendor_id,
+        'category_id' => $phonesCategory->id,
+        'slug' => 'newer-phone-'.uniqid(),
+        'sku' => 'NEWER-PHONE',
+        'price' => 12000,
+        'status' => 'published',
+        'visibility' => 'visible',
+        'is_active' => true,
+        'is_verified' => true,
+        'type' => 'physical',
+        'listing_type' => 'ordinary_listing',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $newer->translations()->create([
+        'locale' => 'en',
+        'title' => 'Newer Phone Listing',
+    ]);
 
-    public function test_latest_phone_section_orders_by_created_at(): void
-    {
-        $phonesCategory = \App\Modules\Selloff\Catalog\Models\Category::query()
-            ->where('slug', 'smartphones')
-            ->firstOrFail();
+    $phones = collect($this->getJson('/api/v1/homepage')->json('data.sections'))->firstWhere('key', 'phones');
+    expect($phones)->not->toBeNull();
 
-        $older = \App\Modules\Selloff\Catalog\Models\Product::query()->create([
-            'vendor_id' => \App\Models\User::query()->where('email', 'vendor@selloff.test')->value('id'),
-            'category_id' => $phonesCategory->id,
-            'slug' => 'older-phone-'.uniqid(),
-            'sku' => 'OLDER-PHONE',
-            'price' => 10000,
-            'status' => 'published',
-            'visibility' => 'visible',
-            'is_active' => true,
-            'is_verified' => true,
-            'type' => 'physical',
-            'listing_type' => 'ordinary_listing',
-            'created_at' => now()->subDays(30),
-            'updated_at' => now()->subDays(30),
-        ]);
-        $older->translations()->create([
-            'locale' => 'en',
-            'title' => 'Older Phone Listing',
-        ]);
+    $titles = collect($phones['products'])->pluck('title')->all();
+    $newerIndex = array_search('Newer Phone Listing', $titles, true);
+    $olderIndex = array_search('Older Phone Listing', $titles, true);
 
-        $newer = \App\Modules\Selloff\Catalog\Models\Product::query()->create([
-            'vendor_id' => $older->vendor_id,
-            'category_id' => $phonesCategory->id,
-            'slug' => 'newer-phone-'.uniqid(),
-            'sku' => 'NEWER-PHONE',
-            'price' => 12000,
-            'status' => 'published',
-            'visibility' => 'visible',
-            'is_active' => true,
-            'is_verified' => true,
-            'type' => 'physical',
-            'listing_type' => 'ordinary_listing',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $newer->translations()->create([
-            'locale' => 'en',
-            'title' => 'Newer Phone Listing',
-        ]);
+    $this->assertNotFalse($newerIndex);
+    $this->assertNotFalse($olderIndex);
+    expect($newerIndex)->toBeLessThan($olderIndex);
+});
 
-        $phones = collect($this->getJson('/api/v1/homepage')->json('data.sections'))->firstWhere('key', 'phones');
-        $this->assertNotNull($phones);
+test('homepage mid site banner uses platform setting and hides when empty', function () {
+    $this->getJson('/api/v1/homepage')
+        ->assertOk()
+        ->assertJsonPath('data.site_banners.mid', null);
 
-        $titles = collect($phones['products'])->pluck('title')->all();
-        $newerIndex = array_search('Newer Phone Listing', $titles, true);
-        $olderIndex = array_search('Older Phone Listing', $titles, true);
+    app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
+        'homepage_site_banner_mid_image' => 'uploads/banners/mid-banner.webp',
+        'homepage_site_banner_mid_alt' => 'Mid banner alt',
+    ], 'homepage');
 
-        $this->assertNotFalse($newerIndex);
-        $this->assertNotFalse($olderIndex);
-        $this->assertLessThan($olderIndex, $newerIndex);
-    }
+    $this->getJson('/api/v1/homepage')
+        ->assertOk()
+        ->assertJsonPath('data.site_banners.mid.image_path', 'uploads/banners/mid-banner.webp')
+        ->assertJsonPath('data.site_banners.mid.alt', 'Mid banner alt');
 
-    public function test_homepage_mid_site_banner_uses_platform_setting_and_hides_when_empty(): void
-    {
-        $this->getJson('/api/v1/homepage')
-            ->assertOk()
-            ->assertJsonPath('data.site_banners.mid', null);
+    app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
+        'homepage_site_banner_mid_image' => null,
+    ], 'homepage');
 
-        app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
-            'homepage_site_banner_mid_image' => 'uploads/banners/mid-banner.webp',
-            'homepage_site_banner_mid_alt' => 'Mid banner alt',
-        ], 'homepage');
+    $this->getJson('/api/v1/homepage')
+        ->assertOk()
+        ->assertJsonPath('data.site_banners.mid', null);
+});
 
-        $this->getJson('/api/v1/homepage')
-            ->assertOk()
-            ->assertJsonPath('data.site_banners.mid.image_path', 'uploads/banners/mid-banner.webp')
-            ->assertJsonPath('data.site_banners.mid.alt', 'Mid banner alt');
+test('homepage restores product sections when latest and promoted are both disabled', function () {
+    app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
+        'index_latest_products' => false,
+        'index_promoted_products' => false,
+    ], 'homepage');
 
-        app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
-            'homepage_site_banner_mid_image' => null,
-        ], 'homepage');
+    $response = $this->getJson('/api/v1/homepage')
+        ->assertOk();
 
-        $this->getJson('/api/v1/homepage')
-            ->assertOk()
-            ->assertJsonPath('data.site_banners.mid', null);
-    }
+    $data = $response->json('data');
 
-    public function test_homepage_restores_product_sections_when_latest_and_promoted_are_both_disabled(): void
-    {
-        app(\App\Services\Platform\PlatformSettingsService::class)->upsertMany([
-            'index_latest_products' => false,
-            'index_promoted_products' => false,
-        ], 'homepage');
-
-        $response = $this->getJson('/api/v1/homepage')
-            ->assertOk();
-
-        $data = $response->json('data');
-
-        $this->assertTrue($data['settings']['index_latest_products']);
-        $this->assertTrue($data['settings']['index_promoted_products']);
-        $this->assertNotEmpty($data['sections']);
-        $this->assertNotEmpty($data['promoted_products']);
-    }
-}
+    expect($data['settings']['index_latest_products'])->toBeTrue();
+    expect($data['settings']['index_promoted_products'])->toBeTrue();
+    expect($data['sections'])->not->toBeEmpty();
+    expect($data['promoted_products'])->not->toBeEmpty();
+});

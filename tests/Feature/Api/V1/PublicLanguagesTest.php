@@ -1,25 +1,15 @@
 <?php
 
-namespace Tests\Feature\Api\V1;
-
 use App\Modules\Selloff\Admin\Models\Language;
-use Tests\TestCase;
 
-class PublicLanguagesTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+});
 
-        $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
-    }
+test('public languages endpoint returns active languages without auth', function () {
+    $this->getJson('/api/v1/languages')
+        ->assertOk()
+        ->assertJsonPath('success', true);
 
-    public function test_public_languages_endpoint_returns_active_languages_without_auth(): void
-    {
-        $this->getJson('/api/v1/languages')
-            ->assertOk()
-            ->assertJsonPath('success', true);
-
-        $this->assertGreaterThanOrEqual(1, Language::query()->where('status', true)->count());
-    }
-}
+    expect(Language::query()->where('status', true)->count())->toBeGreaterThanOrEqual(1);
+});

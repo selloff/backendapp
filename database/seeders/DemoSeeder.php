@@ -56,7 +56,8 @@ class DemoSeeder extends Seeder
         $this->seedVendorShipping($users);
         $catalog = $this->seedExpandedCatalog($users);
         $this->seedProductShowcase($users['vendor']);
-        $this->seedPromotion($users['vendor'], $catalog['category']);
+        $smartphones = Category::query()->where('slug', 'smartphones')->firstOrFail();
+        $this->seedPromotion($users['vendor'], $smartphones);
         $this->seedSampleCommerce($users);
         $this->seedProductReviews($users['buyer']);
         $this->seedPass16Content($users);
@@ -143,9 +144,10 @@ class DemoSeeder extends Seeder
         );
 
         $freebie->update([
-            'status' => 'draft',
-            'is_draft' => true,
-            'is_active' => false,
+            'status' => 'published',
+            'is_draft' => false,
+            'is_active' => true,
+            'visibility' => 'visible',
         ]);
 
         ProductTranslation::query()->firstOrCreate(
@@ -624,7 +626,7 @@ class DemoSeeder extends Seeder
         );
 
         $category = Category::query()->where('slug', 'smartphones')->first();
-        if ($category && ! app()->runningUnitTests()) {
+        if ($category) {
             $field = \App\Modules\Selloff\Catalog\Models\CustomField::query()->updateOrCreate(
                 ['legacy_id' => 9001],
                 [

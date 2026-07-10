@@ -1,28 +1,16 @@
 <?php
 
-namespace Tests\Feature\LegacyImport;
-
 use Illuminate\Support\Facades\DB;
-use Tests\TestCase;
 
-class CatalogDepthLegacyImporterLongTagTest extends TestCase
-{
-    private string $fixture;
+beforeEach(function () {
+    $this->fixture = base_path('tests/fixtures/long-tag.sql');
+    $this->artisan('selloff:migrate', ['--fresh' => true]);
+});
 
-    protected function setUp(): void
-    {
-        parent::setUp();
+test('tag longer than 255 chars is truncated', function () {
+    $this->artisan('selloff:import-legacy-data', ['--source' => $this->fixture])->assertSuccessful();
 
-        $this->fixture = base_path('tests/fixtures/long-tag.sql');
-        $this->artisan('selloff:migrate', ['--fresh' => true]);
-    }
-
-    public function test_tag_longer_than_255_chars_is_truncated(): void
-    {
-        $this->artisan('selloff:import-legacy-data', ['--source' => $this->fixture])->assertSuccessful();
-
-        $storedTag = DB::table('tags')->where('id', 4938)->value('tag');
-        $this->assertSame(255, mb_strlen((string) $storedTag));
-        $this->assertSame(1, DB::table('product_tag')->where('product_id', 9315)->where('tag_id', 4938)->count());
-    }
-}
+    $storedTag = DB::table('tags')->where('id', 4938)->value('tag');
+    expect(mb_strlen((string) $storedTag))->toBe(255);
+    expect(DB::table('product_tag')->where('product_id', 9315)->where('tag_id', 4938)->count())->toBe(1);
+});
