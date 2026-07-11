@@ -22,6 +22,8 @@ class AdminNotificationService
 {
     private const PER_TYPE_LIMIT = 15;
 
+    private const ACTIVITY_WINDOW_DAYS = 30;
+
     /**
      * @return array<string, mixed>
      */
@@ -49,19 +51,12 @@ class AdminNotificationService
             }
 
             $groupUnread = $this->countUnreadForIds($type, $subjectIds, $readKeys);
-            if ($groupUnread === 0) {
-                continue;
-            }
-
             $unreadCount += $groupUnread;
 
-            $items = $this->collectForType($type, $readKeys)
-                ->map(fn (array $item): array => [
-                    ...$item,
-                    'is_read' => false,
-                ])
-                ->values()
-                ->all();
+            $items = $this->sortNotificationItems(
+                $this->collectForType($type),
+                $readKeys,
+            );
 
             $groups[] = [
                 'type' => $type->value,
@@ -146,14 +141,22 @@ class AdminNotificationService
         return $marked;
     }
 
+    private function activityCutoff(): CarbonInterface
+    {
+        return now()->subDays(self::ACTIVITY_WINDOW_DAYS);
+    }
+
     /**
      * @return Collection<int, int>
      */
     private function pendingSubjectIdsForType(AdminNotificationType $type): Collection
     {
+        $cutoff = $this->activityCutoff();
+
         return match ($type) {
             AdminNotificationType::PendingProduct => Product::query()
                 ->adminPendingModeration()
+                ->where('created_at', '>=', $cutoff)
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
@@ -161,47 +164,56 @@ class AdminNotificationService
                 ->where('is_edited', true)
                 ->where('is_deleted', false)
                 ->where('is_draft', false)
+                ->where('updated_at', '>=', $cutoff)
                 ->orderByDesc('updated_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
             AdminNotificationType::ProductComment => ProductComment::query()
                 ->where('is_approved', false)
+                ->where('created_at', '>=', $cutoff)
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
             AdminNotificationType::BlogComment => BlogComment::query()
                 ->where('status', 'pending')
+                ->where('created_at', '>=', $cutoff)
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
             AdminNotificationType::SupportTicket => SupportTicket::query()
                 ->whereIn('status', ['open', 'pending'])
+                ->where('updated_at', '>=', $cutoff)
                 ->orderByDesc('updated_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
             AdminNotificationType::AbuseReport => DB::table('abuse_reports')
                 ->where('status', 'pending')
+                ->where('created_at', '>=', $cutoff)
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
             AdminNotificationType::RefundRequest => RefundRequest::query()
                 ->where('status', 'pending')
                 ->where('is_completed', false)
+                ->where('created_at', '>=', $cutoff)
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
             AdminNotificationType::PayoutRequest => PayoutRequest::query()
                 ->where('status', 'pending')
+                ->where('created_at', '>=', $cutoff)
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
             AdminNotificationType::BankTransfer => BankTransferRequest::query()
                 ->where('status', 'pending')
+                ->where('created_at', '>=', $cutoff)
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
             AdminNotificationType::QuoteRequest => QuoteRequest::query()
                 ->where('status', 'pending')
+                ->where('created_at', '>=', $cutoff)
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
@@ -219,58 +231,56 @@ class AdminNotificationService
     }
 
     /**
-     * @return list<int>
+     * @param  Collection<int, array<string, mixed>>  $items
+     * @return list<array<string, mixed>>
      */
-    private function readSubjectIdsForType(AdminNotificationType $type, Collection $readKeys): array
+    private function sortNotificationItems(Collection $items, Collection $readKeys): array
     {
-        $prefix = $type->value.':';
+        return $items
+            ->map(fn (array $item): array => [
+                ...$item,
+                'is_read' => $readKeys->has($item['key']),
+            ])
+            ->sort(function (array $a, array $b): int {
+                $readCompare = (int) $a['is_read'] <=> (int) $b['is_read'];
+                if ($readCompare !== 0) {
+                    return $readCompare;
+                }
 
-        return $readKeys->keys()
-            ->filter(fn (mixed $key): bool => is_string($key) && str_starts_with($key, $prefix))
-            ->map(fn (string $key): int => (int) substr($key, strlen($prefix)))
+                return strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
+            })
             ->values()
             ->all();
     }
 
     /**
-     * @param  list<int>  $readIds
-     */
-    private function applyUnreadSubjectFilter(mixed $query, string $column, array $readIds): mixed
-    {
-        if ($readIds !== []) {
-            $query->whereNotIn($column, $readIds);
-        }
-
-        return $query;
-    }
-
-    /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectForType(AdminNotificationType $type, Collection $readKeys): Collection
+    private function collectForType(AdminNotificationType $type): Collection
     {
         return match ($type) {
-            AdminNotificationType::PendingProduct => $this->collectPendingProducts($readKeys),
-            AdminNotificationType::EditedProduct => $this->collectEditedProducts($readKeys),
-            AdminNotificationType::ProductComment => $this->collectProductComments($readKeys),
-            AdminNotificationType::BlogComment => $this->collectBlogComments($readKeys),
-            AdminNotificationType::SupportTicket => $this->collectSupportTickets($readKeys),
-            AdminNotificationType::AbuseReport => $this->collectAbuseReports($readKeys),
-            AdminNotificationType::RefundRequest => $this->collectRefundRequests($readKeys),
-            AdminNotificationType::PayoutRequest => $this->collectPayoutRequests($readKeys),
-            AdminNotificationType::BankTransfer => $this->collectBankTransfers($readKeys),
-            AdminNotificationType::QuoteRequest => $this->collectQuoteRequests($readKeys),
+            AdminNotificationType::PendingProduct => $this->collectPendingProducts(),
+            AdminNotificationType::EditedProduct => $this->collectEditedProducts(),
+            AdminNotificationType::ProductComment => $this->collectProductComments(),
+            AdminNotificationType::BlogComment => $this->collectBlogComments(),
+            AdminNotificationType::SupportTicket => $this->collectSupportTickets(),
+            AdminNotificationType::AbuseReport => $this->collectAbuseReports(),
+            AdminNotificationType::RefundRequest => $this->collectRefundRequests(),
+            AdminNotificationType::PayoutRequest => $this->collectPayoutRequests(),
+            AdminNotificationType::BankTransfer => $this->collectBankTransfers(),
+            AdminNotificationType::QuoteRequest => $this->collectQuoteRequests(),
         };
     }
 
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectPendingProducts(Collection $readKeys): Collection
+    private function collectPendingProducts(): Collection
     {
-        $readIds = $this->readSubjectIdsForType(AdminNotificationType::PendingProduct, $readKeys);
-        $query = Product::query()->adminPendingModeration()->with(['vendor', 'translations']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
+        $query = Product::query()
+            ->adminPendingModeration()
+            ->where('created_at', '>=', $this->activityCutoff())
+            ->with(['vendor', 'translations']);
 
         return $query
             ->orderByDesc('created_at')
@@ -287,15 +297,14 @@ class AdminNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectEditedProducts(Collection $readKeys): Collection
+    private function collectEditedProducts(): Collection
     {
-        $readIds = $this->readSubjectIdsForType(AdminNotificationType::EditedProduct, $readKeys);
         $query = Product::query()
             ->where('is_edited', true)
             ->where('is_deleted', false)
             ->where('is_draft', false)
+            ->where('updated_at', '>=', $this->activityCutoff())
             ->with(['vendor', 'translations']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('updated_at')
@@ -312,13 +321,12 @@ class AdminNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectProductComments(Collection $readKeys): Collection
+    private function collectProductComments(): Collection
     {
-        $readIds = $this->readSubjectIdsForType(AdminNotificationType::ProductComment, $readKeys);
         $query = ProductComment::query()
             ->where('is_approved', false)
+            ->where('created_at', '>=', $this->activityCutoff())
             ->with(['user', 'product.translations']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('created_at')
@@ -342,13 +350,12 @@ class AdminNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectBlogComments(Collection $readKeys): Collection
+    private function collectBlogComments(): Collection
     {
-        $readIds = $this->readSubjectIdsForType(AdminNotificationType::BlogComment, $readKeys);
         $query = BlogComment::query()
             ->where('status', 'pending')
+            ->where('created_at', '>=', $this->activityCutoff())
             ->with(['user', 'post']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('created_at')
@@ -372,13 +379,12 @@ class AdminNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectSupportTickets(Collection $readKeys): Collection
+    private function collectSupportTickets(): Collection
     {
-        $readIds = $this->readSubjectIdsForType(AdminNotificationType::SupportTicket, $readKeys);
         $query = SupportTicket::query()
             ->whereIn('status', ['open', 'pending'])
+            ->where('updated_at', '>=', $this->activityCutoff())
             ->with('user');
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('updated_at')
@@ -401,13 +407,11 @@ class AdminNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectAbuseReports(Collection $readKeys): Collection
+    private function collectAbuseReports(): Collection
     {
-        $readIds = $this->readSubjectIdsForType(AdminNotificationType::AbuseReport, $readKeys);
-        $query = DB::table('abuse_reports')->where('status', 'pending');
-        if ($readIds !== []) {
-            $query->whereNotIn('id', $readIds);
-        }
+        $query = DB::table('abuse_reports')
+            ->where('status', 'pending')
+            ->where('created_at', '>=', $this->activityCutoff());
 
         return $query
             ->orderByDesc('created_at')
@@ -431,14 +435,13 @@ class AdminNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectRefundRequests(Collection $readKeys): Collection
+    private function collectRefundRequests(): Collection
     {
-        $readIds = $this->readSubjectIdsForType(AdminNotificationType::RefundRequest, $readKeys);
         $query = RefundRequest::query()
             ->where('status', 'pending')
             ->where('is_completed', false)
+            ->where('created_at', '>=', $this->activityCutoff())
             ->with(['buyer', 'order']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('created_at')
@@ -462,13 +465,12 @@ class AdminNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectPayoutRequests(Collection $readKeys): Collection
+    private function collectPayoutRequests(): Collection
     {
-        $readIds = $this->readSubjectIdsForType(AdminNotificationType::PayoutRequest, $readKeys);
         $query = PayoutRequest::query()
             ->where('status', 'pending')
+            ->where('created_at', '>=', $this->activityCutoff())
             ->with('seller');
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('created_at')
@@ -492,13 +494,12 @@ class AdminNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectBankTransfers(Collection $readKeys): Collection
+    private function collectBankTransfers(): Collection
     {
-        $readIds = $this->readSubjectIdsForType(AdminNotificationType::BankTransfer, $readKeys);
         $query = BankTransferRequest::query()
             ->where('status', 'pending')
+            ->where('created_at', '>=', $this->activityCutoff())
             ->with('user');
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('created_at')
@@ -522,13 +523,12 @@ class AdminNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectQuoteRequests(Collection $readKeys): Collection
+    private function collectQuoteRequests(): Collection
     {
-        $readIds = $this->readSubjectIdsForType(AdminNotificationType::QuoteRequest, $readKeys);
         $query = QuoteRequest::query()
             ->where('status', 'pending')
+            ->where('created_at', '>=', $this->activityCutoff())
             ->with(['buyer', 'product.translations']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('created_at')
@@ -567,49 +567,61 @@ class AdminNotificationService
 
     private function notificationExists(AdminNotificationType $type, int $subjectId): bool
     {
+        $cutoff = $this->activityCutoff();
+
         return match ($type) {
             AdminNotificationType::PendingProduct => Product::query()
                 ->adminPendingModeration()
                 ->whereKey($subjectId)
+                ->where('created_at', '>=', $cutoff)
                 ->exists(),
             AdminNotificationType::EditedProduct => Product::query()
                 ->whereKey($subjectId)
                 ->where('is_edited', true)
                 ->where('is_deleted', false)
                 ->where('is_draft', false)
+                ->where('updated_at', '>=', $cutoff)
                 ->exists(),
             AdminNotificationType::ProductComment => ProductComment::query()
                 ->whereKey($subjectId)
                 ->where('is_approved', false)
+                ->where('created_at', '>=', $cutoff)
                 ->exists(),
             AdminNotificationType::BlogComment => BlogComment::query()
                 ->whereKey($subjectId)
                 ->where('status', 'pending')
+                ->where('created_at', '>=', $cutoff)
                 ->exists(),
             AdminNotificationType::SupportTicket => SupportTicket::query()
                 ->whereKey($subjectId)
                 ->whereIn('status', ['open', 'pending'])
+                ->where('updated_at', '>=', $cutoff)
                 ->exists(),
             AdminNotificationType::AbuseReport => DB::table('abuse_reports')
                 ->where('id', $subjectId)
                 ->where('status', 'pending')
+                ->where('created_at', '>=', $cutoff)
                 ->exists(),
             AdminNotificationType::RefundRequest => RefundRequest::query()
                 ->whereKey($subjectId)
                 ->where('status', 'pending')
                 ->where('is_completed', false)
+                ->where('created_at', '>=', $cutoff)
                 ->exists(),
             AdminNotificationType::PayoutRequest => PayoutRequest::query()
                 ->whereKey($subjectId)
                 ->where('status', 'pending')
+                ->where('created_at', '>=', $cutoff)
                 ->exists(),
             AdminNotificationType::BankTransfer => BankTransferRequest::query()
                 ->whereKey($subjectId)
                 ->where('status', 'pending')
+                ->where('created_at', '>=', $cutoff)
                 ->exists(),
             AdminNotificationType::QuoteRequest => QuoteRequest::query()
                 ->whereKey($subjectId)
                 ->where('status', 'pending')
+                ->where('created_at', '>=', $cutoff)
                 ->exists(),
         };
     }

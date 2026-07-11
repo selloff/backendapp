@@ -1,12 +1,14 @@
 <?php
 
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
     $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
+    Cache::flush();
 });
 
 test('admin analytics returns expected structure for superadmin', function () {
@@ -83,6 +85,28 @@ test('admin analytics respects 24h period', function () {
     $this->getJson('/api/v1/admin/analytics?period=24h')
         ->assertOk()
         ->assertJsonPath('success', true);
+});
+
+test('admin analytics caches stats and supports an explicit refresh', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    Sanctum::actingAs($admin);
+
+    $initialBalance = (float) $this->getJson('/api/v1/admin/analytics?period=24h')
+        ->assertOk()
+        ->json('data.kpis.total_wallet_balance');
+
+    $buyer->increment('wallet_balance', 1000);
+
+    $cachedBalance = (float) $this->getJson('/api/v1/admin/analytics?period=24h')
+        ->assertOk()
+        ->json('data.kpis.total_wallet_balance');
+    expect($cachedBalance)->toBe($initialBalance);
+
+    $refreshedBalance = (float) $this->getJson('/api/v1/admin/analytics?period=24h&refresh=1')
+        ->assertOk()
+        ->json('data.kpis.total_wallet_balance');
+    expect($refreshedBalance)->toBe($initialBalance + 1000);
 });
 
 test('admin analytics respects from and to filters', function () {

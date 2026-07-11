@@ -54,19 +54,12 @@ class UserNotificationService
             }
 
             $groupUnread = $this->countUnreadForIds($type, $subjectIds, $readKeys);
-            if ($groupUnread === 0) {
-                continue;
-            }
-
             $unreadCount += $groupUnread;
 
-            $items = $this->collectForType($type, $user, $isVendor, $readKeys)
-                ->map(fn (array $item): array => [
-                    ...$item,
-                    'is_read' => false,
-                ])
-                ->values()
-                ->all();
+            $items = $this->sortNotificationItems(
+                $this->collectForType($type, $user, $isVendor),
+                $readKeys,
+            );
 
             $groups[] = [
                 'type' => $type->value,
@@ -299,29 +292,26 @@ class UserNotificationService
     }
 
     /**
-     * @return list<int>
+     * @param  Collection<int, array<string, mixed>>  $items
+     * @return list<array<string, mixed>>
      */
-    private function readSubjectIdsForType(UserNotificationType $type, Collection $readKeys): array
+    private function sortNotificationItems(Collection $items, Collection $readKeys): array
     {
-        $prefix = $type->value.':';
+        return $items
+            ->map(fn (array $item): array => [
+                ...$item,
+                'is_read' => $readKeys->has($item['key']),
+            ])
+            ->sort(function (array $a, array $b): int {
+                $readCompare = (int) $a['is_read'] <=> (int) $b['is_read'];
+                if ($readCompare !== 0) {
+                    return $readCompare;
+                }
 
-        return $readKeys->keys()
-            ->filter(fn (mixed $key): bool => is_string($key) && str_starts_with($key, $prefix))
-            ->map(fn (string $key): int => (int) substr($key, strlen($prefix)))
+                return strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
+            })
             ->values()
             ->all();
-    }
-
-    /**
-     * @param  list<int>  $readIds
-     */
-    private function applyUnreadSubjectFilter(mixed $query, string $column, array $readIds): mixed
-    {
-        if ($readIds !== []) {
-            $query->whereNotIn($column, $readIds);
-        }
-
-        return $query;
     }
 
     /**
@@ -331,31 +321,29 @@ class UserNotificationService
         UserNotificationType $type,
         User $user,
         bool $isVendor,
-        Collection $readKeys,
     ): Collection {
         return match ($type) {
-            UserNotificationType::ProductApproved => $this->collectApprovedProducts($user, $isVendor, $readKeys),
-            UserNotificationType::ProductRejected => $this->collectRejectedProducts($user, $isVendor, $readKeys),
-            UserNotificationType::ProductEditedPending => $this->collectEditedProducts($user, $isVendor, $readKeys),
-            UserNotificationType::NewMessage => $this->collectMessages($user, $isVendor, $readKeys),
-            UserNotificationType::NewSale => $this->collectSales($user, $isVendor, $readKeys),
-            UserNotificationType::NewReview => $this->collectReviews($user, $isVendor, $readKeys),
-            UserNotificationType::NewComment => $this->collectComments($user, $isVendor, $readKeys),
-            UserNotificationType::QuoteRequest => $this->collectVendorQuoteRequests($user, $isVendor, $readKeys),
-            UserNotificationType::VendorRefundRequest => $this->collectVendorRefundRequests($user, $isVendor, $readKeys),
-            UserNotificationType::OrderUpdate => $this->collectOrderUpdates($user, $isVendor, $readKeys),
-            UserNotificationType::RefundUpdate => $this->collectRefundUpdates($user, $isVendor, $readKeys),
-            UserNotificationType::QuoteResponse => $this->collectQuoteResponses($user, $isVendor, $readKeys),
+            UserNotificationType::ProductApproved => $this->collectApprovedProducts($user, $isVendor),
+            UserNotificationType::ProductRejected => $this->collectRejectedProducts($user, $isVendor),
+            UserNotificationType::ProductEditedPending => $this->collectEditedProducts($user, $isVendor),
+            UserNotificationType::NewMessage => $this->collectMessages($user, $isVendor),
+            UserNotificationType::NewSale => $this->collectSales($user, $isVendor),
+            UserNotificationType::NewReview => $this->collectReviews($user, $isVendor),
+            UserNotificationType::NewComment => $this->collectComments($user, $isVendor),
+            UserNotificationType::QuoteRequest => $this->collectVendorQuoteRequests($user, $isVendor),
+            UserNotificationType::VendorRefundRequest => $this->collectVendorRefundRequests($user, $isVendor),
+            UserNotificationType::OrderUpdate => $this->collectOrderUpdates($user, $isVendor),
+            UserNotificationType::RefundUpdate => $this->collectRefundUpdates($user, $isVendor),
+            UserNotificationType::QuoteResponse => $this->collectQuoteResponses($user, $isVendor),
         };
     }
 
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectApprovedProducts(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectApprovedProducts(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::ProductApproved;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $query = Product::query()
             ->where('vendor_id', $user->id)
             ->where('is_verified', true)
@@ -364,7 +352,6 @@ class UserNotificationService
             ->where('updated_at', '>=', $this->activityCutoff())
             ->whereColumn('updated_at', '>', 'created_at')
             ->with('translations');
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('updated_at')
@@ -383,10 +370,9 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectRejectedProducts(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectRejectedProducts(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::ProductRejected;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $query = Product::query()
             ->where('vendor_id', $user->id)
             ->where('is_verified', false)
@@ -396,7 +382,6 @@ class UserNotificationService
             ->where('reject_reason', '!=', '')
             ->where('updated_at', '>=', $this->activityCutoff())
             ->with('translations');
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('updated_at')
@@ -415,10 +400,9 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectEditedProducts(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectEditedProducts(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::ProductEditedPending;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $query = Product::query()
             ->where('vendor_id', $user->id)
             ->where('is_edited', true)
@@ -426,7 +410,6 @@ class UserNotificationService
             ->where('is_draft', false)
             ->where('updated_at', '>=', $this->activityCutoff())
             ->with('translations');
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('updated_at')
@@ -445,10 +428,9 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectMessages(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectMessages(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::NewMessage;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $cutoff = $this->activityCutoff();
         $query = Conversation::query()
             ->with(['sender', 'receiver', 'product.translations', 'latestMessage'])
@@ -459,7 +441,6 @@ class UserNotificationService
                 ->where('receiver_id', $user->id)
                 ->where('is_read', false)
                 ->where('created_at', '>=', $cutoff));
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('last_message_at')
@@ -493,15 +474,13 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectSales(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectSales(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::NewSale;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $cutoff = $this->activityCutoff();
         $orderIds = OrderItem::query()
             ->where('seller_id', $user->id)
             ->where('created_at', '>=', $cutoff)
-            ->when($readIds !== [], fn (Builder $query) => $query->whereNotIn('order_id', $readIds))
             ->select('order_id')
             ->distinct()
             ->orderByDesc('order_id')
@@ -530,15 +509,13 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectReviews(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectReviews(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::NewReview;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $query = ProductReview::query()
             ->where('created_at', '>=', $this->activityCutoff())
             ->whereHas('product', fn (Builder $inner) => $inner->where('vendor_id', $user->id))
             ->with(['user', 'product.translations']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('created_at')
@@ -561,15 +538,13 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectComments(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectComments(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::NewComment;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $query = ProductComment::query()
             ->where('created_at', '>=', $this->activityCutoff())
             ->whereHas('product', fn (Builder $inner) => $inner->where('vendor_id', $user->id))
             ->with(['user', 'product.translations']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('created_at')
@@ -592,16 +567,14 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectVendorQuoteRequests(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectVendorQuoteRequests(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::QuoteRequest;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $query = QuoteRequest::query()
             ->where('seller_id', $user->id)
             ->where('status', 'pending')
             ->where('created_at', '>=', $this->activityCutoff())
             ->with(['buyer', 'product.translations']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('created_at')
@@ -624,17 +597,15 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectVendorRefundRequests(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectVendorRefundRequests(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::VendorRefundRequest;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $query = RefundRequest::query()
             ->where('seller_id', $user->id)
             ->where('status', 'pending')
             ->where('is_completed', false)
             ->where('created_at', '>=', $this->activityCutoff())
             ->with(['buyer', 'order']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('created_at')
@@ -657,10 +628,9 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectOrderUpdates(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectOrderUpdates(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::OrderUpdate;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $cutoff = $this->activityCutoff();
         $query = Order::query()
             ->where('buyer_id', $user->id)
@@ -671,8 +641,6 @@ class UserNotificationService
                         ->whereNotNull('order_status')
                         ->where('order_status', '!=', 'pending'));
             });
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
-
         return $query
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
@@ -694,10 +662,9 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectRefundUpdates(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectRefundUpdates(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::RefundUpdate;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $query = RefundRequest::query()
             ->where('buyer_id', $user->id)
             ->where('updated_at', '>=', $this->activityCutoff())
@@ -706,7 +673,6 @@ class UserNotificationService
                     ->orWhere('is_completed', true);
             })
             ->with('order');
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('updated_at')
@@ -730,16 +696,14 @@ class UserNotificationService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function collectQuoteResponses(User $user, bool $isVendor, Collection $readKeys): Collection
+    private function collectQuoteResponses(User $user, bool $isVendor): Collection
     {
         $type = UserNotificationType::QuoteResponse;
-        $readIds = $this->readSubjectIdsForType($type, $readKeys);
         $query = QuoteRequest::query()
             ->where('buyer_id', $user->id)
             ->whereIn('status', ['quoted', 'accepted', 'rejected', 'closed'])
             ->where('updated_at', '>=', $this->activityCutoff())
             ->with(['seller', 'product.translations']);
-        $this->applyUnreadSubjectFilter($query, 'id', $readIds);
 
         return $query
             ->orderByDesc('updated_at')

@@ -83,13 +83,14 @@ test('group total count covers full queue not only visible items', function () {
 
     expect($pendingGroup)->not->toBeNull();
     expect($pendingGroup['total_count'])->toBeGreaterThanOrEqual(count($pendingGroup['items']));
-    expect(count($pendingGroup['items']))->toBe($pendingGroup['unread_count']);
+    expect(count($pendingGroup['items']))->toBeLessThanOrEqual(15);
+    expect($pendingGroup['unread_count'])->toBeLessThanOrEqual($pendingGroup['total_count']);
     foreach ($pendingGroup['items'] as $item) {
         expect($item['is_read'])->toBeFalse();
     }
 });
 
-test('mark read removes item from dropdown list', function () {
+test('mark read keeps item visible with is_read true', function () {
     $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
     $pending = Product::query()->where('sku', 'DEMO-PENDING-1')->firstOrFail();
     Sanctum::actingAs($admin);
@@ -110,14 +111,15 @@ test('mark read removes item from dropdown list', function () {
     expect($after)->toBe($before - 1);
 
     $response = $this->getJson('/api/v1/admin/notifications')->assertOk();
-    $keys = collect($response->json('data.groups'))
+    $item = collect($response->json('data.groups'))
         ->flatMap(fn (array $group): array => $group['items'])
-        ->pluck('key');
+        ->firstWhere('key', $key);
 
-    expect($keys->contains($key))->toBeFalse();
+    expect($item)->not->toBeNull();
+    expect($item['is_read'])->toBeTrue();
 });
 
-test('shared read state hides item for all admins', function () {
+test('shared read state shows item as read for all admins', function () {
     $adminA = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
     $role = Role::query()->firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     $adminB = User::query()->create([
@@ -138,11 +140,12 @@ test('shared read state hides item for all admins', function () {
     $this->postJson('/api/v1/admin/notifications/'.rawurlencode($key).'/read')->assertOk();
 
     Sanctum::actingAs($adminB);
-    $keys = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
+    $item = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
         ->flatMap(fn (array $group): array => $group['items'])
-        ->pluck('key');
+        ->firstWhere('key', $key);
 
-    expect($keys->contains($key))->toBeFalse();
+    expect($item)->not->toBeNull();
+    expect($item['is_read'])->toBeTrue();
     expect(AdminNotificationRead::query()->where('notification_key', $key)->count())->toBe(1);
 });
 
@@ -191,7 +194,7 @@ test('unread count endpoint returns count', function () {
     expect($badgeCount)->toBe($listCount);
 });
 
-test('mark all read marks visible notifications', function () {
+test('mark all read marks visible notifications but keeps them listed', function () {
     $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
     Sanctum::actingAs($admin);
 
@@ -202,8 +205,28 @@ test('mark all read marks visible notifications', function () {
         ->assertOk()
         ->assertJsonPath('success', true);
 
-    $this->getJson('/api/v1/admin/notifications')
-        ->assertOk()
-        ->assertJsonPath('data.unread_count', 0)
-        ->assertJsonPath('data.groups', []);
+    $response = $this->getJson('/api/v1/admin/notifications')->assertOk();
+    expect($response->json('data.unread_count'))->toBe(0);
+    expect($response->json('data.groups'))->not->toBeEmpty();
+
+    foreach ($response->json('data.groups') as $group) {
+        foreach ($group['items'] as $item) {
+            expect($item['is_read'])->toBeTrue();
+        }
+    }
+});
+
+test('notifications older than 30 days are excluded', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $pending = Product::query()->where('sku', 'DEMO-PENDING-1')->firstOrFail();
+    $pending->created_at = now()->subDays(31);
+    $pending->save();
+
+    Sanctum::actingAs($admin);
+
+    $keys = collect($this->getJson('/api/v1/admin/notifications')->json('data.groups'))
+        ->flatMap(fn (array $group): array => $group['items'])
+        ->pluck('key');
+
+    expect($keys->contains('pending_product:'.$pending->id))->toBeFalse();
 });

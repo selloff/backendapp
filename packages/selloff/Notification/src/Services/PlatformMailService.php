@@ -94,13 +94,25 @@ class PlatformMailService
     {
         $settings ??= $this->settings->all();
 
+        $address = trim((string) ($settings['mail_from_address'] ?? ''));
+        if ($address === '') {
+            $address = trim((string) (config('mail.from.address') ?? ''));
+        }
+        if ($address === '') {
+            $address = 'noreply@selloff.test';
+        }
+
+        $name = trim((string) ($settings['mail_from_name'] ?? ''));
+        if ($name === '') {
+            $name = trim((string) (config('mail.from.name') ?? ''));
+        }
+        if ($name === '') {
+            $name = 'Selloff';
+        }
+
         return [
-            'address' => (string) ($settings['mail_from_address']
-                ?? config('mail.from.address')
-                ?? 'noreply@selloff.test'),
-            'name' => (string) ($settings['mail_from_name']
-                ?? config('mail.from.name')
-                ?? 'Selloff'),
+            'address' => $address,
+            'name' => $name,
         ];
     }
 

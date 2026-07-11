@@ -94,7 +94,7 @@ test('member notifications include unread message conversations', function () {
     expect(collect($messageGroup['items'])->pluck('key'))->toContain('new_message:'.$conversation->id);
 });
 
-test('mark read is scoped per user', function () {
+test('mark read is scoped per user and keeps item visible', function () {
     $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
     $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
     $quote = QuoteRequest::query()
@@ -118,6 +118,13 @@ test('mark read is scoped per user', function () {
 
     $after = $this->getJson('/api/v1/notifications/inbox')->json('data.unread_count');
     expect($after)->toBe($before - 1);
+
+    $item = collect($this->getJson('/api/v1/notifications/inbox')->json('data.groups'))
+        ->flatMap(fn (array $group): array => $group['items'])
+        ->firstWhere('key', $key);
+
+    expect($item)->not->toBeNull();
+    expect($item['is_read'])->toBeTrue();
 
     Sanctum::actingAs($buyer);
     expect(UserNotificationRead::query()->where('user_id', $buyer->id)->where('notification_key', $key)->exists())->toBeFalse();
@@ -149,15 +156,26 @@ test('unread count endpoint returns count', function () {
         ->assertJsonStructure(['data' => ['count']]);
 });
 
-test('mark all read clears unread notifications for user', function () {
+test('mark all read clears unread count but keeps read items visible', function () {
     $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
     Sanctum::actingAs($vendor);
 
+    $beforeGroups = $this->getJson('/api/v1/notifications/inbox')->json('data.groups');
     expect($this->getJson('/api/v1/notifications/inbox')->json('data.unread_count'))->toBeGreaterThan(0);
 
     $this->postJson('/api/v1/notifications/read-all')
         ->assertOk()
         ->assertJsonPath('success', true);
 
-    expect($this->getJson('/api/v1/notifications/inbox')->json('data.unread_count'))->toBe(0);
+    $response = $this->getJson('/api/v1/notifications/inbox')->assertOk();
+    expect($response->json('data.unread_count'))->toBe(0);
+    expect($response->json('data.groups'))->not->toBeEmpty();
+
+    foreach ($response->json('data.groups') as $group) {
+        foreach ($group['items'] as $item) {
+            expect($item['is_read'])->toBeTrue();
+        }
+    }
+
+    expect(count($response->json('data.groups')))->toBeGreaterThanOrEqual(count($beforeGroups));
 });

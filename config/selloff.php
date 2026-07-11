@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'admin' => [
+        'analytics_cache_seconds' => (int) env('ADMIN_ANALYTICS_CACHE_SECONDS', 300),
+    ],
+
     'platform_settings' => [
         'site_name' => env('APP_NAME', 'Selloff'),
         'site_description' => 'Multi-vendor marketplace',

@@ -45,7 +45,7 @@ class AdminAnalyticsService
         $capabilities = $this->capabilities($user);
 
         $currentKpis = $this->kpis($from, $to);
-        $previousKpis = $this->kpis($previousFrom, $previousTo);
+        $previousKpis = $this->deltaKpis($previousFrom, $previousTo);
 
         $payload = [
             'period' => [
@@ -184,14 +184,6 @@ class AdminAnalyticsService
             ->whereBetween('created_at', [$from, $to])
             ->sum(DB::raw(ServicePaymentQuery::membershipPaidAmountExpression()));
 
-        $totalPromotionPayments = (float) ServicePaymentQuery::wherePaid(PromotionTransaction::query())
-            ->whereBetween('created_at', [$from, $to])
-            ->sum('amount');
-
-        $totalSubscriptionPayments = (float) ServicePaymentQuery::wherePaid(MembershipTransaction::query())
-            ->whereBetween('created_at', [$from, $to])
-            ->sum(DB::raw(ServicePaymentQuery::membershipPaidAmountExpression()));
-
         return [
             'gmv' => round($gmv, 2),
             'platform_commission' => round($platformCommission, 2),
@@ -232,8 +224,8 @@ class AdminAnalyticsService
                 ->count(),
             'promotion_revenue' => round($promotionRevenue, 2),
             'membership_revenue' => round($membershipRevenue, 2),
-            'total_promotion_payments' => round($totalPromotionPayments, 2),
-            'total_subscription_payments' => round($totalSubscriptionPayments, 2),
+            'total_promotion_payments' => round($promotionRevenue, 2),
+            'total_subscription_payments' => round($membershipRevenue, 2),
             'total_wallet_balance' => round((float) User::query()->sum('wallet_balance'), 2),
             'affiliate_members' => (int) User::query()->where('is_affiliate', 1)->count(),
             'contact_views' => (int) ProductListingDailyMetric::query()
@@ -244,6 +236,34 @@ class AdminAnalyticsService
                     ->whereBetween('metric_date', [$from->toDateString(), $to->toDateString()])
                     ->sum('impressions')
                 : 0,
+        ];
+    }
+
+    /**
+     * Only the three previous-period values used by deltas are needed.
+     *
+     * @return array{gmv: float, orders_count: int, new_users: int}
+     */
+    private function deltaKpis(CarbonInterface $from, CarbonInterface $to): array
+    {
+        $ordersCount = (int) Order::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->count();
+
+        $gmv = (float) Order::query()
+            ->where('payment_status', 'payment_received')
+            ->where('status', '!=', 'cancelled')
+            ->whereBetween('created_at', [$from, $to])
+            ->sum('price_total');
+
+        $newUsers = (int) User::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->count();
+
+        return [
+            'gmv' => round($gmv, 2),
+            'orders_count' => $ordersCount,
+            'new_users' => $newUsers,
         ];
     }
 
