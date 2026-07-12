@@ -30,7 +30,7 @@ class UpdateMeRequest extends FormRequest
             'country_id' => ['sometimes', 'nullable', 'integer', 'exists:countries,id'],
             'state_id' => ['sometimes', 'nullable', 'integer', 'exists:states,id'],
             'city_id' => ['sometimes', 'nullable', 'integer', 'exists:cities,id'],
-            'phone_number' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'phone_number' => ['sometimes', 'nullable', 'string', 'max:255', 'unique:users,phone_number,'.$this->user()?->id],
             'selected_currency_code' => ['sometimes', 'nullable', 'string', 'max:10', 'exists:currencies,code'],
             'send_email_new_message' => ['sometimes', 'boolean'],
         ];

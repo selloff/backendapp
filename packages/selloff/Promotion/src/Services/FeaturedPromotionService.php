@@ -233,7 +233,7 @@ class FeaturedPromotionService
     }
 
     /** @deprecated Use checkout() */
-    public function promote(User $vendor, Product $product, string $planType, int $duration = 1): PromotionTransaction
+    public function promote(User $vendor, Product $product, string $planType, int $duration = 7): PromotionTransaction
     {
         $result = $this->checkout($vendor, $product, $planType, $duration, 'wallet_balance');
 

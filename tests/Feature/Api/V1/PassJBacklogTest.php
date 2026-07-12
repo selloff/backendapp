@@ -407,13 +407,11 @@ test('vendor can list promotion transactions', function () {
 });
 
 test('registration queues email verification and token verifies email', function () {
-    $response = $this->postJson('/api/v1/auth/register', [
+    $response = $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Pass',
         'last_name' => 'J6',
         'email' => 'passj6.verify@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
-    ])
+    ]))
         ->assertCreated()
         ->assertJsonPath('data.email_verification_required', true);
 

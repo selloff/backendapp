@@ -141,8 +141,7 @@ class AdminProductExportService
     private function eachProduct(callable $applyFilters, callable $callback): void
     {
         $query = Product::query()
-            ->with(['translations', 'vendor.vendorProfile', 'category.translations'])
-            ->orderByDesc('id');
+            ->with(['translations', 'vendor.vendorProfile', 'category.translations']);
 
         $applyFilters($query);
 

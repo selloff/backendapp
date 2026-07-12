@@ -25,6 +25,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
 Route::prefix('admin/shop-opening')->middleware(['auth:sanctum', 'admin.pin.login', 'admin.pin.delete', 'admin.pin.settings', 'permission:membership'])->group(function (): void {
     Route::get('/requests', [AdminShopOpeningController::class, 'index']);
+    Route::get('/requests/{user}/documents/view', [AdminShopOpeningController::class, 'viewDocument']);
     Route::post('/requests/{user}/approve', [AdminShopOpeningController::class, 'approve']);
     Route::post('/requests/{user}/reject', [AdminShopOpeningController::class, 'reject']);
 });

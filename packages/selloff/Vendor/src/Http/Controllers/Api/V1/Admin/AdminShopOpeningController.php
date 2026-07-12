@@ -9,6 +9,8 @@ use App\Services\Auth\RolePermissionSync;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminShopOpeningController extends Controller
 {
@@ -67,6 +69,29 @@ class AdminShopOpeningController extends Controller
         $emails->queueRejected($fresh, (int) $data['status'], $data['reason'] ?? null);
 
         return ApiResponse::success($this->formatRequest($fresh));
+    }
+
+    public function viewDocument(Request $request, User $user): StreamedResponse
+    {
+        $data = $request->validate([
+            'path' => ['required', 'string', 'max:2048'],
+        ]);
+
+        $document = $this->findVendorDocument($user, $data['path']);
+        abort_if($document === null, 404);
+
+        $disk = $this->resolveDocumentDisk($document);
+        $path = ltrim((string) $document['path'], '/');
+
+        abort_unless(Storage::disk($disk)->exists($path), 404);
+
+        $filename = (string) ($document['name'] ?? basename($path));
+        $mime = Storage::disk($disk)->mimeType($path) ?? 'application/octet-stream';
+
+        return Storage::disk($disk)->response($path, $filename, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
+        ]);
     }
 
     private function formatRequest(User $user): array
@@ -141,5 +166,49 @@ class AdminShopOpeningController extends Controller
         }
 
         return $location !== '' ? $location : null;
+    }
+
+    /**
+     * @return array{name: string, path: string, storage?: string}|null
+     */
+    private function findVendorDocument(User $user, string $path): ?array
+    {
+        $normalized = ltrim($path, '/');
+
+        foreach ($user->vendor_documents ?? [] as $document) {
+            if (! is_array($document)) {
+                continue;
+            }
+
+            $documentPath = ltrim((string) ($document['path'] ?? ''), '/');
+            if ($documentPath === '' || $documentPath !== $normalized) {
+                continue;
+            }
+
+            return [
+                'name' => (string) ($document['name'] ?? basename($documentPath)),
+                'path' => $documentPath,
+                'storage' => isset($document['storage']) ? (string) $document['storage'] : null,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{name: string, path: string, storage?: string|null}  $document
+     */
+    private function resolveDocumentDisk(array $document): string
+    {
+        $storage = trim((string) ($document['storage'] ?? ''));
+
+        if ($storage === '' || $storage === 'local') {
+            $storage = (string) config('selloff.media_disk', 'public');
+        }
+
+        return match ($storage) {
+            'aws_s3', 'amazon_s3' => 's3',
+            default => $storage,
+        };
     }
 }

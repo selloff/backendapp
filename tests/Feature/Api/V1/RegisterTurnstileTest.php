@@ -12,13 +12,11 @@ test('registration succeeds without turnstile when disabled', function () {
         'turnstile_status' => false,
     ]);
 
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Turn',
         'last_name' => 'Stile',
         'email' => 'turnstile.off@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
-    ])->assertCreated();
+    ]))->assertCreated();
 });
 
 test('registration requires turnstile token when enabled', function () {
@@ -28,13 +26,11 @@ test('registration requires turnstile token when enabled', function () {
         'turnstile_secret_key' => 'secret-test-key',
     ]);
 
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Turn',
         'last_name' => 'Stile',
         'email' => 'turnstile.missing@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
-    ])
+    ]))
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['cf_turnstile_response']);
 });
@@ -50,14 +46,12 @@ test('registration verifies turnstile token when enabled', function () {
         'challenges.cloudflare.com/*' => Http::response(['success' => true]),
     ]);
 
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Turn',
         'last_name' => 'Stile',
         'email' => 'turnstile.ok@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
         'cf_turnstile_response' => 'valid-turnstile-token',
-    ])->assertCreated();
+    ]))->assertCreated();
 
     Http::assertSent(fn ($request) => $request->url() === 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
         && $request['secret'] === 'secret-test-key'
@@ -75,14 +69,12 @@ test('registration rejects invalid turnstile token when enabled', function () {
         'challenges.cloudflare.com/*' => Http::response(['success' => false]),
     ]);
 
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Turn',
         'last_name' => 'Stile',
         'email' => 'turnstile.bad@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
         'cf_turnstile_response' => 'invalid-turnstile-token',
-    ])
+    ]))
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['cf_turnstile_response']);
 });

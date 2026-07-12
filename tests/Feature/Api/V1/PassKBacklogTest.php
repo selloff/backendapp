@@ -120,6 +120,24 @@ test('vendor membership status reflects expired plan', function () {
         ->assertJsonPath('data.can_add_products', false);
 });
 
+test('vendor can promote own product with default duration', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $product = Product::query()->where('vendor_id', $vendor->id)->firstOrFail();
+
+    Sanctum::actingAs($vendor);
+
+    $this->postJson("/api/v1/vendor/products/{$product->id}/promote", [
+        'plan_type' => 'daily',
+    ])
+        ->assertCreated()
+        ->assertJsonPath('data.status', 'completed');
+
+    $product->refresh();
+    expect($product->is_promoted)->toBeTrue();
+    expect($product->promoted_until)->not->toBeNull();
+    expect(now()->diffInDays($product->promoted_until))->toBeGreaterThanOrEqual(6);
+});
+
 test('vendor can promote own product', function () {
     $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
     $product = Product::query()->where('vendor_id', $vendor->id)->firstOrFail();

@@ -2,6 +2,7 @@
 
 require_once __DIR__.'/Helpers/AdminPin.php';
 require_once __DIR__.'/Helpers/MonorepoPath.php';
+require_once __DIR__.'/Helpers/Register.php';
 
 /*
 |--------------------------------------------------------------------------

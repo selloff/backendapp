@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
+use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
     $this->artisan('selloff:migrate', ['--fresh' => true, '--seed' => true]);
@@ -126,4 +127,29 @@ SQL);
         ->assertOk()
         ->assertJsonPath('data.total', 1)
         ->assertJsonPath('data.data.0.id', 501);
+});
+
+test('admin can view shop opening documents inline through authenticated proxy', function () {
+    config(['selloff.media_disk' => 'public']);
+    Storage::fake('public');
+
+    $path = 'uploads/support/id-card.jpg';
+    Storage::disk('public')->put($path, 'fake-image-content');
+
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $buyer->update([
+        'vendor_documents' => [
+            ['name' => 'ID card', 'path' => $path],
+        ],
+    ]);
+
+    Sanctum::actingAs($admin);
+
+    $this->get('/api/v1/admin/shop-opening/requests/'.$buyer->id.'/documents/view?path='.urlencode($path))
+        ->assertOk()
+        ->assertHeader('content-disposition', 'inline; filename="ID card"');
+
+    $this->get('/api/v1/admin/shop-opening/requests/'.$buyer->id.'/documents/view?path='.urlencode('uploads/support/missing.jpg'))
+        ->assertNotFound();
 });

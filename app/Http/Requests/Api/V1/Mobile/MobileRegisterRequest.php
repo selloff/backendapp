@@ -19,7 +19,7 @@ class MobileRegisterRequest extends FormRequest
             'last_name' => ['sometimes', 'string', 'max:100'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'max:255'],
-            'phone_number' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'phone_number' => ['required', 'string', 'max:255', 'unique:users,phone_number'],
             'device_name' => ['sometimes', 'string', 'max:255'],
             'referral_code' => ['sometimes', 'nullable', 'string', 'max:40'],
             'referred_by_code' => ['sometimes', 'nullable', 'string', 'max:40'],

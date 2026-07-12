@@ -109,6 +109,14 @@ final class AdminProductQueryFilter
             }
         }
 
+        if ($request->filled('updated_from')) {
+            $query->whereDate('updated_at', '>=', $request->input('updated_from'));
+        }
+
+        if ($request->filled('updated_to')) {
+            $query->whereDate('updated_at', '<=', $request->input('updated_to'));
+        }
+
         $search = trim((string) ($request->input('search') ?: $request->input('q', '')));
         if ($search === '') {
             return;
@@ -121,5 +129,22 @@ final class AdminProductQueryFilter
                 fn (Builder $translation) => $translation->whereLike('title', $term, caseSensitive: false),
             )->orWhereLike('sku', $term, caseSensitive: false);
         });
+    }
+
+    public static function applySort(Builder $query, Request $request): void
+    {
+        $allowedSorts = ['id', 'created_at', 'updated_at'];
+        $sort = $request->string('sort')->toString();
+        if (! in_array($sort, $allowedSorts, true)) {
+            $sort = 'updated_at';
+        }
+
+        $direction = strtolower($request->string('direction')->toString()) === 'asc' ? 'asc' : 'desc';
+
+        $query->orderBy($sort, $direction);
+
+        if ($sort !== 'id') {
+            $query->orderByDesc('id');
+        }
     }
 }

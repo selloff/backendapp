@@ -34,7 +34,7 @@ class VendorProductPromotionController extends Controller
             $request->user(),
             $product,
             $data['plan_type'],
-            $data['duration'] ?? 1,
+            $data['duration'] ?? 7,
             $data['payment_method'] ?? 'wallet_balance',
         );
 

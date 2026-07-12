@@ -31,14 +31,12 @@ test('registration with valid referral code links referrer', function () {
         ['referral_code' => 'INVITE10', 'referral_points' => 0],
     );
 
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Referred',
         'last_name' => 'User',
         'email' => 'referred.user@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
         'referral_code' => $profile->referral_code,
-    ])->assertCreated();
+    ]))->assertCreated();
 
     $referred = User::query()->where('email', 'referred.user@selloff.test')->firstOrFail();
     $referredProfile = ReferralProfile::query()->where('user_id', $referred->id)->firstOrFail();
@@ -48,14 +46,12 @@ test('registration with valid referral code links referrer', function () {
 });
 
 test('registration rejects invalid referral code', function () {
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Bad',
         'last_name' => 'Code',
         'email' => 'bad.code@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
         'referral_code' => 'NOTREAL99',
-    ])->assertStatus(422)
+    ]))->assertStatus(422)
         ->assertJsonValidationErrors(['referral_code']);
 });
 
@@ -79,14 +75,12 @@ test('points awarded after email verification', function () {
         ['referral_code' => 'VERIFY10', 'referral_points' => 0],
     );
 
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Verify',
         'last_name' => 'Me',
         'email' => 'verify.me@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
         'referral_code' => 'VERIFY10',
-    ])->assertCreated();
+    ]))->assertCreated();
 
     $referred = User::query()->where('email', 'verify.me@selloff.test')->firstOrFail();
     $token = app(EmailVerificationService::class)->issueToken($referred);
@@ -110,14 +104,12 @@ test('email verification award is idempotent', function () {
         ['referral_code' => 'IDEMPOT', 'referral_points' => 0],
     );
 
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Once',
         'last_name' => 'Only',
         'email' => 'once.only@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
         'referral_code' => 'IDEMPOT',
-    ])->assertCreated();
+    ]))->assertCreated();
 
     $referred = User::query()->where('email', 'once.only@selloff.test')->firstOrFail();
     $token = app(EmailVerificationService::class)->issueToken($referred);
@@ -264,14 +256,12 @@ test('award referral points locks current money per point on earn row', function
         ['referral_code' => 'LOCKRATE', 'referral_points' => 0],
     );
 
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Locked',
         'last_name' => 'Rate',
         'email' => 'locked.rate@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
         'referral_code' => 'LOCKRATE',
-    ])->assertCreated();
+    ]))->assertCreated();
 
     $referred = User::query()->where('email', 'locked.rate@selloff.test')->firstOrFail();
     $token = app(EmailVerificationService::class)->issueToken($referred);
@@ -440,14 +430,12 @@ test('admin referrals report lists signups', function () {
         ['referral_code' => 'ADMINRPT', 'referral_points' => 0],
     );
 
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'Admin',
         'last_name' => 'Report',
         'email' => 'admin.report@selloff.test',
-        'password' => 'password',
-        'password_confirmation' => 'password',
         'referral_code' => 'ADMINRPT',
-    ])->assertCreated();
+    ]))->assertCreated();
 
     $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
     Sanctum::actingAs($admin);

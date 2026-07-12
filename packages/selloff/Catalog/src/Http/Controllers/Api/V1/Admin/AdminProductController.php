@@ -28,10 +28,10 @@ class AdminProductController extends Controller
         }
 
         $query = Product::query()
-            ->with($this->listRelations())
-            ->orderByDesc('id');
+            ->with($this->listRelations());
 
         AdminProductQueryFilter::apply($query, $request);
+        AdminProductQueryFilter::applySort($query, $request);
 
         $paginator = $query->paginate($perPage);
         $paginator->through(fn (Product $product) => new ProductAdminResource($product));
@@ -46,7 +46,10 @@ class AdminProductController extends Controller
             abort(422, 'Invalid export format.');
         }
 
-        return $export->export($format, fn ($query) => AdminProductQueryFilter::apply($query, $request));
+        return $export->export($format, function ($query) use ($request): void {
+            AdminProductQueryFilter::apply($query, $request);
+            AdminProductQueryFilter::applySort($query, $request);
+        });
     }
 
     public function bulk(Request $request, AdminProductBulkService $bulk): JsonResponse

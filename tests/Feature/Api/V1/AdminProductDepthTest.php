@@ -348,3 +348,49 @@ test('admin can filter deleted products restore and delete permanently', functio
 
     $this->assertDatabaseMissing('products', ['id' => $productId]);
 });
+
+test('admin products list supports updated date filter and sort', function () {
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $older = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
+    $newer = Product::query()->where('sku', 'DEMO-LAPTOP-1')->firstOrFail();
+
+    $older->update(['updated_at' => now()->subDays(10)]);
+    $newer->update(['updated_at' => now()->subDay()]);
+
+    Sanctum::actingAs($admin);
+
+    $response = $this->getJson('/api/v1/admin/products?list=all&sort=updated_at&direction=desc&per_page=100')
+        ->assertOk();
+
+    $ids = collect($response->json('data.data'))
+        ->filter(fn (array $row) => in_array($row['sku'], ['DEMO-PHONE-1', 'DEMO-LAPTOP-1'], true))
+        ->pluck('id')
+        ->values()
+        ->all();
+
+    expect($ids)->toHaveCount(2)
+        ->and($ids[0])->toBe($newer->id);
+
+    $this->getJson('/api/v1/admin/products?list=all&updated_from='.now()->subDays(5)->toDateString().'&q=DEMO-PHONE-1')
+        ->assertOk()
+        ->assertJsonPath('data.total', 0);
+
+    $this->getJson('/api/v1/admin/products?list=all&updated_from='.now()->subDays(15)->toDateString().'&updated_to='.now()->subDays(5)->toDateString().'&q=DEMO-PHONE-1')
+        ->assertOk()
+        ->assertJsonPath('data.total', 1)
+        ->assertJsonPath('data.data.0.id', $older->id);
+
+    $export = $this->get('/api/v1/admin/products/export?list=all&sort=updated_at&direction=desc')
+        ->assertOk();
+
+    $rows = array_map('str_getcsv', array_filter(explode("\n", trim($export->streamedContent()))));
+    $skuIndex = array_search('SKU', $rows[0], true);
+    $exportedSkus = collect(array_slice($rows, 1))
+        ->map(fn (array $row) => $row[$skuIndex] ?? null)
+        ->filter(fn (?string $sku) => in_array($sku, ['DEMO-PHONE-1', 'DEMO-LAPTOP-1'], true))
+        ->values()
+        ->all();
+
+    expect($exportedSkus)->toHaveCount(2)
+        ->and($exportedSkus[0])->toBe('DEMO-LAPTOP-1');
+});

@@ -28,13 +28,13 @@ function disableEmailOption(string $key): void
 }
 
 test('registration queues a branded activation email job', function () {
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'New',
         'last_name' => 'Member',
         'email' => 'new.member@selloff.test',
         'password' => 'secret',
         'password_confirmation' => 'secret',
-    ])->assertCreated();
+    ]))->assertCreated();
 
     $job = EmailJob::query()->where('email_type', 'activation')->first();
 
@@ -49,13 +49,13 @@ test('registration queues a branded activation email job', function () {
 test('registration does not queue activation email when email verification is disabled', function () {
     disableEmailOption('email_verification');
 
-    $this->postJson('/api/v1/auth/register', [
+    $this->postJson('/api/v1/auth/register', registerPayload([
         'first_name' => 'No',
         'last_name' => 'Verify',
         'email' => 'no.verify@selloff.test',
         'password' => 'secret',
         'password_confirmation' => 'secret',
-    ])->assertCreated();
+    ]))->assertCreated();
 
     expect(EmailJob::query()->where('email_type', 'activation')->count())->toBe(0);
 });
