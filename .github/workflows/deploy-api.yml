@@ -41,14 +41,26 @@ jobs:
 
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_API_ROOT: ${{ github.ref_name == 'main' && secrets.DEPLOY_API_ROOT_PRODUCTION || secrets.DEPLOY_API_ROOT_STAGING }}
         with:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           port: ${{ secrets.DROPLET_PORT || '22' }}
+          envs: DEPLOY_API_ROOT
           script_stop: true
           script: |
             set -euo pipefail
             echo "Deploying ${{ github.ref_name }} to ${{ steps.target.outputs.env_name }}"
+
+            if [ -n "${DEPLOY_API_ROOT:-}" ]; then
+              echo "Clearing ephemeral media processing directories under ${DEPLOY_API_ROOT}/shared/storage/app"
+              rm -rf "${DEPLOY_API_ROOT}/shared/storage/app/media-work" \
+                     "${DEPLOY_API_ROOT}/shared/storage/app/media-temp" 2>/dev/null || \
+                sudo rm -rf "${DEPLOY_API_ROOT}/shared/storage/app/media-work" \
+                           "${DEPLOY_API_ROOT}/shared/storage/app/media-temp" || true
+            fi
+
             bash "${{ steps.target.outputs.script }}"
             echo "Deployment complete"

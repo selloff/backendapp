@@ -42,6 +42,7 @@ class MediaUploadService
 
         $sourcePath = $this->storeIncomingFile($file);
         $directories = $this->directoriesFor($definition);
+        $workDirectory = $directories['absolute'];
 
         try {
             return match ($kind) {
@@ -52,6 +53,9 @@ class MediaUploadService
             };
         } finally {
             @unlink($sourcePath);
+            if (is_dir($workDirectory)) {
+                File::deleteDirectory($workDirectory);
+            }
         }
     }
 
