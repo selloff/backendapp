@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Selloff\Notification\Services\ShopOpeningEmailService;
 use App\Modules\Selloff\Vendor\Services\VendorShopOpeningDocumentService;
 use App\Services\Auth\RolePermissionSync;
+use App\Services\Media\MediaUploadService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +17,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminShopOpeningController extends Controller
 {
+    public function __construct(
+        private readonly MediaUploadService $media,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $perPage = (int) ($request->input('show') ?: $request->integer('per_page', 15));
@@ -132,20 +137,29 @@ class AdminShopOpeningController extends Controller
 
     /**
      * @param  mixed  $documents
-     * @return list<array{name: string, path: string}>
+     * @return list<array{name: string, path: string, url: string}>
      */
     private function formatVendorDocuments(mixed $documents): array
     {
         return collect($documents ?? [])
             ->map(function ($document) {
                 if (is_array($document)) {
+                    $path = (string) ($document['path'] ?? '');
+
                     return [
                         'name' => (string) ($document['name'] ?? 'Document'),
-                        'path' => (string) ($document['path'] ?? ''),
+                        'path' => $path,
+                        'url' => $path !== '' ? $this->media->supportDocumentPublicUrl($path) : '',
                     ];
                 }
 
-                return ['name' => (string) $document, 'path' => (string) $document];
+                $path = (string) $document;
+
+                return [
+                    'name' => $path,
+                    'path' => $path,
+                    'url' => $path !== '' ? $this->media->supportDocumentPublicUrl($path) : '',
+                ];
             })
             ->filter(fn (array $document) => $document['path'] !== '')
             ->values()

@@ -128,6 +128,21 @@ class MediaUploadService
     }
 
     /**
+     * Legacy admin shop-opening previews linked directly to {site}/uploads/support/{file}.
+     */
+    public function supportDocumentPublicUrl(string $path): string
+    {
+        $path = $this->normalizeSupportDocumentReference($path);
+        $base = rtrim((string) config('selloff.legacy_media_public_url'), '/');
+
+        if ($base === '') {
+            $base = rtrim((string) config('app.url'), '/');
+        }
+
+        return $base.'/'.ltrim($path, '/');
+    }
+
+    /**
      * @return array{disk: string, path: string}|null
      */
     public function resolveReadableSupportDocument(string $path, ?string $storage = null): ?array

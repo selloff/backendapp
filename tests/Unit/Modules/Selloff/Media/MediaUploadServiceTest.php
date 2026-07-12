@@ -170,6 +170,15 @@ test('support document resolver finds legacy dated support folder objects', func
     expect($resolved)->toBe(['disk' => 's3', 'path' => $storagePath]);
 });
 
+test('support document public url mirrors legacy base_url uploads/support links', function () {
+    config(['selloff.legacy_media_public_url' => 'https://selloff.ng']);
+
+    $service = app(MediaUploadService::class);
+
+    expect($service->supportDocumentPublicUrl('uploads/support/file_demo.jpg'))
+        ->toBe('https://selloff.ng/uploads/support/file_demo.jpg');
+});
+
 test('support document resolver fetches from legacy media public url when disk lookup fails', function () {
     Storage::fake('public');
     Storage::fake('s3');

@@ -10,8 +10,15 @@ beforeEach(function () {
 });
 
 test('admin lists shop opening requests with status filter', function () {
+    config(['selloff.legacy_media_public_url' => 'https://selloff.ng']);
+
     $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
     $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $buyer->update([
+        'vendor_documents' => [
+            ['name' => 'National ID', 'path' => 'uploads/support/file_demo.jpg'],
+        ],
+    ]);
     Sanctum::actingAs($admin);
 
     $this->getJson('/api/v1/admin/shop-opening/requests')
@@ -34,7 +41,11 @@ test('admin lists shop opening requests with status filter', function () {
                 'current_page',
                 'last_page',
             ],
-        ]);
+        ])
+        ->assertJsonPath(
+            'data.data.0.vendor_documents.0.url',
+            'https://selloff.ng/uploads/support/file_demo.jpg',
+        );
 
     $this->getJson('/api/v1/admin/shop-opening/requests?status=2')
         ->assertOk()

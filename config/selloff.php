@@ -306,10 +306,13 @@ return [
 
     'media_disk' => env('SELLOFF_MEDIA_DISK', 'public'),
 
-    // Public CDN for legacy uploads/support/* objects when local/staging disks miss them.
+    // Public site/CDN base for legacy uploads/support/* (legacy admin used base_url($path, 'https')).
     'legacy_media_public_url' => env(
         'SELLOFF_LEGACY_MEDIA_PUBLIC_URL',
-        env('APP_ENV') === 'local' ? 'https://selloff.ng' : '',
+        match (env('APP_ENV')) {
+            'local', 'testing' => 'https://selloff.ng',
+            default => rtrim((string) env('FRONTEND_URL', 'https://selloff.ng'), '/'),
+        },
     ),
 
     // Legacy MySQL `images.image_*` columns store paths relative to this S3 prefix.
