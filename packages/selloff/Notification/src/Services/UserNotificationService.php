@@ -195,6 +195,17 @@ class UserNotificationService
                 ->orderByDesc('updated_at')
                 ->orderByDesc('id')
                 ->pluck('id'),
+            UserNotificationType::ProductEditRejected => Product::query()
+                ->where('vendor_id', $user->id)
+                ->where('is_deleted', false)
+                ->where('is_draft', false)
+                ->whereNotNull('last_edit_reject_reason')
+                ->where('last_edit_reject_reason', '!=', '')
+                ->whereNotNull('last_edit_rejected_at')
+                ->where('last_edit_rejected_at', '>=', $cutoff)
+                ->orderByDesc('last_edit_rejected_at')
+                ->orderByDesc('id')
+                ->pluck('id'),
             UserNotificationType::ProductEditedPending => Product::query()
                 ->where('vendor_id', $user->id)
                 ->where('is_edited', true)
@@ -325,6 +336,7 @@ class UserNotificationService
         return match ($type) {
             UserNotificationType::ProductApproved => $this->collectApprovedProducts($user, $isVendor),
             UserNotificationType::ProductRejected => $this->collectRejectedProducts($user, $isVendor),
+            UserNotificationType::ProductEditRejected => $this->collectEditRejectedProducts($user, $isVendor),
             UserNotificationType::ProductEditedPending => $this->collectEditedProducts($user, $isVendor),
             UserNotificationType::NewMessage => $this->collectMessages($user, $isVendor),
             UserNotificationType::NewSale => $this->collectSales($user, $isVendor),
@@ -394,6 +406,36 @@ class UserNotificationService
                 'Listing needs changes · '.trim((string) $product->reject_reason),
                 $isVendor,
                 $product->updated_at,
+            ));
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function collectEditRejectedProducts(User $user, bool $isVendor): Collection
+    {
+        $type = UserNotificationType::ProductEditRejected;
+        $query = Product::query()
+            ->where('vendor_id', $user->id)
+            ->where('is_deleted', false)
+            ->where('is_draft', false)
+            ->whereNotNull('last_edit_reject_reason')
+            ->where('last_edit_reject_reason', '!=', '')
+            ->whereNotNull('last_edit_rejected_at')
+            ->where('last_edit_rejected_at', '>=', $this->activityCutoff())
+            ->with('translations');
+
+        return $query
+            ->orderByDesc('last_edit_rejected_at')
+            ->orderByDesc('id')
+            ->limit(self::PER_TYPE_LIMIT)
+            ->get()
+            ->map(fn (Product $product): array => $this->mapProductItem(
+                $type,
+                $product,
+                'Edit rejected · '.trim((string) $product->last_edit_reject_reason),
+                $isVendor,
+                $product->last_edit_rejected_at,
             ));
     }
 

@@ -61,4 +61,29 @@ class ProductModerationEmailService
             template: 'item-rejected',
         );
     }
+
+    public function queueEditRejected(Product $product, string $reason): ?EmailJob
+    {
+        $vendor = $product->vendor;
+        $to = trim((string) ($vendor?->email ?? ''));
+
+        if ($to === '') {
+            return null;
+        }
+
+        $data = $this->viewData->forProduct($product, $reason);
+        $subject = "Your product edit was rejected: {$data['productTitle']}";
+
+        return $this->email->queue(
+            TransactionalEmailType::PRODUCT_REJECTED,
+            $to,
+            [
+                ...$data,
+                'subject' => $subject,
+                'body' => "Your recent changes to {$data['productTitle']} were not approved. {$reason} Please update your listing and submit again.",
+            ],
+            subject: $subject,
+            template: 'item-rejected',
+        );
+    }
 }

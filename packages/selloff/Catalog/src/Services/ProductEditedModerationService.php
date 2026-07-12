@@ -27,17 +27,19 @@ class ProductEditedModerationService
             return;
         }
 
-        $updates = [
+        $product->update([
             'is_edited' => true,
-        ];
+            'is_verified' => false,
+        ]);
+    }
 
-        if ($approveAfterEditing === 2) {
-            $updates['status'] = 'pending';
-            $updates['is_active'] = false;
-            $updates['is_verified'] = false;
+    public function shouldStageModeratedFields(Product $product): bool
+    {
+        if ((int) ($this->platformSettings->all()['approve_after_editing'] ?? 0) === 0) {
+            return false;
         }
 
-        $product->update($updates);
+        return $this->isEligiblePublishedProduct($product);
     }
 
     private function isEligiblePublishedProduct(Product $product): bool

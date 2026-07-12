@@ -153,6 +153,52 @@ test('vendor can replace images only', function () {
     ]);
 });
 
+test('vendor product save persists image variant paths from upload', function () {
+    config([
+        'filesystems.disks.s3.bucket' => 'selloff-prod',
+        'filesystems.disks.s3.region' => 'eu-west-2',
+        'filesystems.disks.s3.url' => null,
+    ]);
+
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    $product = createVendorActiveProduct_in_VendorProductQuickActions($vendor, [
+        'sku' => 'QUICK-PHOTOS-VAR',
+        'slug' => 'quick-photos-var',
+        'title' => 'Variant path listing',
+    ]);
+
+    Sanctum::actingAs($vendor);
+
+    $this->putJson("/api/v1/products/{$product->id}", [
+        'images' => [
+            [
+                'path' => '202607/img_w960_sharedtoken.webp',
+                'disk' => 'aws_s3',
+                'variant_paths' => [
+                    'small' => '202607/img_w480_sharedtoken.webp',
+                    'default' => '202607/img_w960_sharedtoken.webp',
+                    'big' => '202607/img_w1600_sharedtoken.webp',
+                ],
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.images.0.variant_paths.small', '202607/img_w480_sharedtoken.webp')
+        ->assertJsonPath('data.images.0.urls.small', 'https://selloff-prod.s3.eu-west-2.amazonaws.com/uploads/images/202607/img_w480_sharedtoken.webp');
+
+    $this->assertDatabaseHas('product_images', [
+        'product_id' => $product->id,
+        'path' => '202607/img_w960_sharedtoken.webp',
+    ]);
+
+    $stored = ProductImage::query()
+        ->where('product_id', $product->id)
+        ->where('path', '202607/img_w960_sharedtoken.webp')
+        ->firstOrFail();
+
+    expect($stored->variant_paths['small'] ?? null)->toBe('202607/img_w480_sharedtoken.webp');
+});
+
 test('vendor can set main image by array order', function () {
     $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
     $product = createVendorActiveProduct_in_VendorProductQuickActions($vendor, [
@@ -200,6 +246,7 @@ test('price update marks listing as edited when approve after editing enabled', 
         'slug' => 'quick-price-edited',
         'title' => 'Edited price listing',
         'is_edited' => false,
+        'price' => 25000,
     ]);
 
     Sanctum::actingAs($vendor);
@@ -209,7 +256,9 @@ test('price update marks listing as edited when approve after editing enabled', 
     ])
         ->assertOk()
         ->assertJsonPath('data.is_edited', true)
-        ->assertJsonPath('data.price', '18000.00');
+        ->assertJsonPath('data.has_pending_changes', true)
+        ->assertJsonPath('data.price', '25000.00')
+        ->assertJsonPath('data.pending_changes.price', '18000.00');
 
     $this->assertDatabaseHas('products', [
         'id' => $product->id,
@@ -218,7 +267,7 @@ test('price update marks listing as edited when approve after editing enabled', 
     ]);
 });
 
-test('image update marks listing as edited and keeps it on vendor items for sale', function () {
+test('image update alone does not trigger edited moderation queue', function () {
     app(PlatformSettingsService::class)->upsertMany([
         'approve_after_editing' => 2,
     ]);
@@ -239,12 +288,8 @@ test('image update marks listing as edited and keeps it on vendor items for sale
         ],
     ])
         ->assertOk()
-        ->assertJsonPath('data.is_edited', true)
-        ->assertJsonPath('data.status', 'pending');
-
-    $this->getJson('/api/v1/vendor/products')
-        ->assertOk()
-        ->assertJsonFragment(['id' => $product->id, 'is_edited' => true]);
+        ->assertJsonPath('data.is_edited', false)
+        ->assertJsonPath('data.status', 'published');
 });
 
 test('published product cannot remove all images', function () {

@@ -17,6 +17,7 @@ use App\Modules\Selloff\Catalog\Support\ProductListingFilterCriteria;
 use App\Modules\Selloff\Catalog\Support\ProductLocationPriorityQuery;
 use App\Modules\Selloff\Media\Models\ProductImage;
 use App\Modules\Selloff\Catalog\Services\ProductEditedModerationService;
+use App\Modules\Selloff\Catalog\Services\ProductEditStagingService;
 use App\Modules\Selloff\Catalog\Services\ProductRecommendationService;
 use App\Modules\Selloff\Notification\Services\NewProductAdminEmailService;
 use App\Modules\Selloff\Catalog\Services\ProductShippingEstimateService;
@@ -43,6 +44,7 @@ class ProductController extends Controller
         private readonly MembershipListingGuardService $membershipListingGuard,
         private readonly ProductVendorWriteNormalizer $vendorWriteNormalizer,
         private readonly ProductEditedModerationService $editedModeration,
+        private readonly ProductEditStagingService $editStaging,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -257,6 +259,23 @@ class ProductController extends Controller
         $licenseKeys = $data['license_keys'] ?? null;
         $tags = array_key_exists('tags', $data) ? $data['tags'] : null;
         $customFields = array_key_exists('custom_fields', $data) ? $data['custom_fields'] : null;
+
+        $shouldStageModeratedFields = $request->user()->cannot('admin_panel')
+            && $this->editedModeration->shouldStageModeratedFields($product)
+            && $request->hasAny(['title', 'description', 'price', 'price_discounted']);
+
+        $proposedModeratedChanges = null;
+        if ($shouldStageModeratedFields) {
+            $proposedModeratedChanges = $this->editStaging->mergeProposedChanges(
+                $product->load('translations'),
+                array_intersect_key($translationFields, array_flip(['title', 'description'])),
+                array_intersect_key($data, array_flip(['price', 'price_discounted'])),
+            );
+
+            unset($translationFields['title'], $translationFields['description']);
+            unset($data['price'], $data['price_discounted']);
+        }
+
         unset(
             $data['title'],
             $data['description'],
@@ -308,10 +327,8 @@ class ProductController extends Controller
             $customFields,
         );
 
-        if (
-            $request->user()->cannot('admin_panel')
-            && $request->hasAny(['price', 'price_discounted', 'images'])
-        ) {
+        if ($shouldStageModeratedFields && $proposedModeratedChanges !== null) {
+            $this->editStaging->stageModeratedFields($product->fresh(['translations']), $proposedModeratedChanges);
             $this->editedModeration->applyAfterVendorEdit($product->fresh(), $request->user());
         }
 
@@ -343,7 +360,7 @@ class ProductController extends Controller
         return ApiResponse::success(message: 'Deleted.');
     }
 
-    /** @param  array<int, array{path?: string, disk?: string, url?: string}>  $images */
+    /** @param  array<int, array{path?: string, disk?: string, url?: string, variant_paths?: array<string, string|null>}>  $images */
     private function syncImages(Product $product, array $images): void
     {
         $product->images()->delete();
@@ -357,10 +374,32 @@ class ProductController extends Controller
                 'product_id' => $product->id,
                 'path' => $image['path'],
                 'disk' => $image['disk'] ?? config('selloff.media_disk', 'public'),
+                'variant_paths' => $this->normalizeImageVariantPaths($image['variant_paths'] ?? null),
                 'sort_order' => $index,
                 'is_primary' => $index === 0,
             ]);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $variantPaths
+     * @return array{small?: string, default?: string, big?: string}|null
+     */
+    private function normalizeImageVariantPaths(?array $variantPaths): ?array
+    {
+        if (! is_array($variantPaths) || $variantPaths === []) {
+            return null;
+        }
+
+        $normalized = [];
+        foreach (['small', 'default', 'big'] as $variant) {
+            $value = $variantPaths[$variant] ?? null;
+            if (is_string($value) && $value !== '') {
+                $normalized[$variant] = $value;
+            }
+        }
+
+        return $normalized === [] ? null : $normalized;
     }
 
     /**

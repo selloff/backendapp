@@ -81,3 +81,29 @@ test('cart item mutation clears applied shipping', function () {
         ->assertCreated()
         ->assertJsonPath('data.totals.shipping_cost', 0);
 });
+
+test('user can update avatar cover and storage on profile', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    Sanctum::actingAs($vendor);
+
+    $this->patchJson('/api/v1/auth/me', [
+        'avatar' => 'uploads/profile/test-avatar.jpg',
+        'storage_avatar' => 'public',
+        'cover_path' => 'uploads/profile/test-cover.jpg',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.user.avatar', 'uploads/profile/test-avatar.jpg')
+        ->assertJsonPath('data.cover_path', 'uploads/profile/test-cover.jpg');
+
+    expect($vendor->fresh()->avatar)->toBe('uploads/profile/test-avatar.jpg')
+        ->and($vendor->fresh()->storage_avatar)->toBe('public')
+        ->and($vendor->fresh()->vendorProfile?->cover_path)->toBe('uploads/profile/test-cover.jpg');
+
+    $this->patchJson('/api/v1/auth/me', [
+        'cover_path' => null,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.cover_path', null);
+
+    expect($vendor->fresh()->vendorProfile?->cover_path)->toBeNull();
+});

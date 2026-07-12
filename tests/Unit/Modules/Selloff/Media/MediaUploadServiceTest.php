@@ -64,10 +64,16 @@ test('product upload returns legacy relative path and variants', function () {
     expect($result['variants'])->toHaveKey('default');
     expect($result['variants'])->toHaveKey('big');
 
-    foreach ($result['variants'] as $variant) {
+    $tokens = [];
+    foreach ($result['variants'] as $label => $variant) {
+        expect($variant['path'])->toMatch('/^\d{6}\/img_w\d+_/');
+        preg_match('/img_w\d+_([^.]+)\./', $variant['path'], $matches);
+        $tokens[$label] = $matches[1] ?? null;
         $storagePath = 'uploads/images/'.$variant['path'];
         Storage::disk('public')->assertExists($storagePath);
     }
+
+    expect(array_unique(array_values($tokens)))->toHaveCount(1);
 });
 
 test('vendor document upload uses support folder without date segment', function () {

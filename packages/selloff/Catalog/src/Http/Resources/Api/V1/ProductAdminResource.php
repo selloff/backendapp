@@ -2,6 +2,7 @@
 
 namespace App\Modules\Selloff\Catalog\Http\Resources\Api\V1;
 
+use App\Modules\Selloff\Catalog\Services\ProductEditStagingService;
 use Illuminate\Http\Request;
 
 /** @mixin \App\Modules\Selloff\Catalog\Models\Product */
@@ -39,6 +40,21 @@ class ProductAdminResource extends ProductResource
             'commission_rate' => $this->whenLoaded(
                 'category',
                 fn () => $this->category?->is_commission_set ? (float) $this->category->commission_rate : null,
+            ),
+            'moderation_diff' => $this->when(
+                (bool) $this->is_edited,
+                fn () => app(ProductEditStagingService::class)->buildModerationDiff($this->resource),
+            ),
+            'moderation_snapshot_warning' => $this->when(
+                (bool) $this->is_edited
+                    && (
+                        ! is_array($this->approved_snapshot)
+                        || $this->approved_snapshot === []
+                        || ($this->pending_submitted_at !== null
+                            && $this->updated_at !== null
+                            && $this->pending_submitted_at->lt($this->updated_at))
+                    ),
+                true,
             ),
         ]);
     }

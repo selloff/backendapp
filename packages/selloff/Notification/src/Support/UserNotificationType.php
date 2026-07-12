@@ -6,6 +6,7 @@ enum UserNotificationType: string
 {
     case ProductApproved = 'product_approved';
     case ProductRejected = 'product_rejected';
+    case ProductEditRejected = 'product_edit_rejected';
     case ProductEditedPending = 'product_edited_pending';
     case NewMessage = 'new_message';
     case NewSale = 'new_sale';
@@ -26,6 +27,7 @@ enum UserNotificationType: string
             self::NewMessage,
             self::ProductApproved,
             self::ProductRejected,
+            self::ProductEditRejected,
             self::ProductEditedPending,
             self::NewSale,
             self::NewReview,
@@ -43,6 +45,7 @@ enum UserNotificationType: string
         return match ($this) {
             self::ProductApproved => 'Products approved',
             self::ProductRejected => 'Products rejected',
+            self::ProductEditRejected => 'Edit changes rejected',
             self::ProductEditedPending => 'Edited listings',
             self::NewMessage => 'Messages',
             self::NewSale => 'New sales',
@@ -61,6 +64,7 @@ enum UserNotificationType: string
         return match ($this) {
             self::ProductApproved,
             self::ProductRejected,
+            self::ProductEditRejected,
             self::ProductEditedPending,
             self::NewSale,
             self::NewReview,
@@ -89,6 +93,7 @@ enum UserNotificationType: string
         return match ($this) {
             self::ProductApproved => '/vendor/products',
             self::ProductRejected => '/vendor/products?st=hidden',
+            self::ProductEditRejected => '/vendor/products',
             self::ProductEditedPending => '/vendor/products?st=pending',
             self::NewMessage => $isVendor ? '/vendor/messages' : '/messages',
             self::NewSale => '/vendor/sales',
@@ -105,7 +110,7 @@ enum UserNotificationType: string
     public function actionUrl(int $subjectId, bool $isVendor): string
     {
         return match ($this) {
-            self::ProductApproved, self::ProductRejected, self::ProductEditedPending => "/vendor/products/{$subjectId}/edit",
+            self::ProductApproved, self::ProductRejected, self::ProductEditRejected, self::ProductEditedPending => "/vendor/products/{$subjectId}/edit",
             self::NewMessage => $isVendor
                 ? "/vendor/messages?conversation={$subjectId}"
                 : "/messages?conversation={$subjectId}",

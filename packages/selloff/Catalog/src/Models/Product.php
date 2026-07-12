@@ -43,6 +43,10 @@ class Product extends Model
             'vat_rate' => 'decimal:4',
             'is_free_product' => 'boolean',
             'shipping_dimensions' => 'array',
+            'approved_snapshot' => 'array',
+            'pending_changes' => 'array',
+            'pending_submitted_at' => 'datetime',
+            'last_edit_rejected_at' => 'datetime',
         ];
     }
 

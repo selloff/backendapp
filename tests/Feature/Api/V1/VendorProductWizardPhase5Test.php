@@ -159,3 +159,25 @@ test('updating general fields does not downgrade published product to draft', fu
     expect($product->status)->toBe('published');
     expect($product->is_draft)->toBeFalse();
 });
+
+test('vendor general step save preserves existing price and stock when omitted', function () {
+    $vendor = User::query()->where('email', 'vendor@selloff.test')->firstOrFail();
+    Sanctum::actingAs($vendor);
+
+    $product = Product::query()->where('sku', 'DEMO-PHONE-1')->firstOrFail();
+    $product->update(['price' => 12500, 'stock' => 7]);
+
+    $this->putJson("/api/v1/products/{$product->id}", [
+        'title' => 'Price preservation test updated',
+        'description' => 'General step only',
+        'type' => 'physical',
+        'listing_type' => 'sell_on_site',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Price preservation test updated');
+
+    $product->refresh();
+
+    expect((string) $product->price)->toBe('12500.00')
+        ->and($product->stock)->toBe(7);
+});

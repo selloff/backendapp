@@ -18,6 +18,8 @@ class UpdateMeRequest extends FormRequest
             'last_name' => ['sometimes', 'string', 'max:100'],
             'email' => ['sometimes', 'email', 'max:255', 'unique:users,email,'.$this->user()?->id],
             'avatar' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'storage_avatar' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'cover_path' => ['sometimes', 'nullable', 'string', 'max:500'],
             'social_media_data' => ['sometimes', 'nullable', 'array'],
             'social_media_data.facebook' => ['nullable', 'string', 'max:500'],
             'social_media_data.twitter' => ['nullable', 'string', 'max:500'],

@@ -25,7 +25,8 @@ class MeController extends Controller
         $user = $request->user();
         $validated = $request->validated();
         $socialMediaData = $validated['social_media_data'] ?? null;
-        unset($validated['social_media_data']);
+        $coverPath = $validated['cover_path'] ?? null;
+        unset($validated['social_media_data'], $validated['cover_path']);
 
         $user->fill($validated);
 
@@ -44,6 +45,13 @@ class MeController extends Controller
             } else {
                 $user->update(['social_media_data' => $socialMediaData]);
             }
+        }
+
+        if ($request->exists('cover_path')) {
+            VendorProfile::query()->updateOrCreate(
+                ['user_id' => $user->id],
+                ['cover_path' => $coverPath],
+            );
         }
 
         return ApiResponse::success(new MeResource($buildMe->execute($user->fresh()->load('vendorProfile'))));

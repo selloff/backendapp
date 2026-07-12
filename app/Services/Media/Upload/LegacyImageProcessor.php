@@ -17,8 +17,14 @@ class LegacyImageProcessor
      * @param  array<string, mixed>  $definition
      * @return array{relative: string, absolute: string, filename: string, width: int}
      */
-    public function optimize(array $definition, string $sourcePath, string $absoluteDirectory, string $relativeDirectory): array
-    {
+    public function optimize(
+        array $definition,
+        string $sourcePath,
+        string $absoluteDirectory,
+        string $relativeDirectory,
+        ?string $token = null,
+        ?string $extension = null,
+    ): array {
         $method = (string) ($definition['method'] ?? 'resize');
         $width = isset($definition['width']) ? (int) $definition['width'] : null;
         $height = isset($definition['height']) ? (int) $definition['height'] : null;
@@ -33,8 +39,8 @@ class LegacyImageProcessor
             $prefix .= 'h'.$height.'_';
         }
 
-        $extension = $this->targetExtension($sourcePath);
-        $filename = $prefix.Str::lower(Str::random(24)).'.'.$extension;
+        $extension ??= $this->targetExtension($sourcePath);
+        $filename = $prefix.Str::lower($token ?? Str::random(24)).'.'.$extension;
         $absolutePath = rtrim($absoluteDirectory, '/').'/'.$filename;
         $relativePath = trim($relativeDirectory.'/'.$filename, '/');
 
@@ -78,6 +84,9 @@ class LegacyImageProcessor
             'watermark' => $watermarkType,
         ];
 
+        $token = Str::lower(Str::random(24));
+        $extension = $this->targetExtension($sourcePath);
+
         $variants = [];
         foreach ($sizes as $label => $width) {
             $variants[$label] = $this->optimize(
@@ -85,6 +94,8 @@ class LegacyImageProcessor
                 $sourcePath,
                 $absoluteDirectory,
                 $relativeDirectory,
+                $token,
+                $extension,
             );
         }
 

@@ -172,6 +172,7 @@ class ProductResource extends JsonResource
                             'default' => $media->urlForProductImageWithVariants($image->path, $image->disk, 'default', $variantPaths),
                             'big' => $media->urlForProductImageWithVariants($image->path, $image->disk, 'big', $variantPaths),
                         ],
+                        'variant_paths' => $variantPaths,
                         'is_primary' => $image->is_primary,
                         'sort_order' => $image->sort_order,
                     ];
@@ -238,9 +239,45 @@ class ProductResource extends JsonResource
                 $this->exposesMembershipDetailPerks($request),
                 fn () => $this->resolveViewerDigitalPurchase($request),
             ),
+            'has_pending_changes' => is_array($this->pending_changes) && $this->pending_changes !== [],
+            'pending_changes' => $this->when(
+                $this->canViewPendingChanges($request),
+                fn () => $this->pending_changes,
+            ),
+            'pending_submitted_at' => $this->when(
+                $this->canViewPendingChanges($request) && $this->pending_submitted_at !== null,
+                fn () => $this->pending_submitted_at?->toIso8601String(),
+            ),
+            'approved_snapshot' => $this->when(
+                $this->canViewPendingChanges($request),
+                fn () => $this->approved_snapshot,
+            ),
+            'last_edit_reject_reason' => $this->when(
+                $this->canViewPendingChanges($request) && filled($this->last_edit_reject_reason),
+                fn () => $this->last_edit_reject_reason,
+            ),
+            'last_edit_rejected_at' => $this->when(
+                $this->canViewPendingChanges($request) && $this->last_edit_rejected_at !== null,
+                fn () => $this->last_edit_rejected_at?->toIso8601String(),
+            ),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+    }
+
+    private function canViewPendingChanges(Request $request): bool
+    {
+        $user = $request->user();
+
+        if ($user === null) {
+            return false;
+        }
+
+        if ($user->can('admin_panel')) {
+            return true;
+        }
+
+        return (int) $user->id === (int) $this->vendor_id;
     }
 
     /** @return list<array{id: int, slug: string|null, name: string|null}> */

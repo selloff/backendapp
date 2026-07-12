@@ -10,10 +10,17 @@ class ProductModerationService
 {
     public function __construct(
         private readonly ProductModerationEmailService $emails,
+        private readonly ProductEditStagingService $staging,
     ) {}
 
     public function approve(Product $product): Product
     {
+        if ($product->is_edited && is_array($product->pending_changes) && $product->pending_changes !== []) {
+            $this->staging->applyPendingChanges($product->fresh(['translations']));
+        } else {
+            $this->staging->captureApprovedSnapshot($product->fresh(['translations']));
+        }
+
         $product->update([
             'is_verified' => true,
             'status' => 'published',
@@ -40,6 +47,10 @@ class ProductModerationService
 
         $trimmedReason = trim($reason);
 
+        if ($product->is_edited) {
+            return $this->rejectEditedChanges($product, $trimmedReason);
+        }
+
         $product->update([
             'is_verified' => false,
             'status' => 'hidden',
@@ -50,6 +61,27 @@ class ProductModerationService
 
         $fresh = $product->fresh()->load(['translations', 'vendor.vendorProfile', 'category.translations', 'brand', 'images']);
         $this->emails->queueRejected($fresh, $trimmedReason);
+
+        return $fresh;
+    }
+
+    private function rejectEditedChanges(Product $product, string $reason): Product
+    {
+        $this->staging->discardPendingChanges($product->fresh(['translations']));
+
+        $product->update([
+            'is_verified' => true,
+            'status' => 'published',
+            'visibility' => 'visible',
+            'is_active' => true,
+            'is_edited' => false,
+            'reject_reason' => null,
+            'last_edit_reject_reason' => $reason,
+            'last_edit_rejected_at' => now(),
+        ]);
+
+        $fresh = $product->fresh()->load(['translations', 'vendor.vendorProfile', 'category.translations', 'brand', 'images']);
+        $this->emails->queueEditRejected($fresh, $reason);
 
         return $fresh;
     }

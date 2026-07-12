@@ -29,6 +29,7 @@ class MeResource extends JsonResource
             'referral_program_enabled' => (bool) ($referralProgram['status'] ?? false),
             'social_media_data' => $this->resource->vendorProfile?->social_media_data
                 ?? $this->resource->social_media_data,
+            'cover_path' => $this->resource->vendorProfile?->cover_path,
             'roles' => $this->getRoleNames(),
             'permissions' => $this->getAllPermissions()->pluck('name')->values(),
             'platform_settings' => PlatformSettingsPublicFilter::filter($settings),
