@@ -65,6 +65,7 @@ test('admin can manage settings users roles and upload media', function () {
     ])->assertCreated()
         ->assertJsonPath('data.name', 'moderator');
 
+    config(['selloff.media_disk' => 'public']);
     Storage::fake('public');
 
     $upload = $this->postJson('/api/v1/media/upload', [
@@ -100,6 +101,7 @@ test('authenticated user can upload temp media', function () {
     $member->assignRole('member');
 
     Sanctum::actingAs($member);
+    config(['selloff.media_disk' => 'public']);
     Storage::fake('public');
 
     $this->postJson('/api/v1/media/upload', [

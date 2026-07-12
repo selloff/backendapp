@@ -175,8 +175,7 @@ class MediaUploadService
             $relative .= '/'.$dateSegment;
         }
 
-        $absolute = storage_path('app/media-work/'.Str::uuid());
-        File::ensureDirectoryExists($absolute);
+        $absolute = $this->localProcessingWorkDirectory();
 
         return [
             'absolute' => $absolute,
@@ -188,13 +187,44 @@ class MediaUploadService
 
     private function storeIncomingFile(UploadedFile $file): string
     {
-        $tempDir = storage_path('app/media-temp');
-        File::ensureDirectoryExists($tempDir);
+        $tempDir = $this->localProcessingTempDirectory();
         $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin');
         $tempPath = $tempDir.'/'.Str::uuid().'.'.$extension;
         $file->move(dirname($tempPath), basename($tempPath));
 
         return $tempPath;
+    }
+
+    private function localProcessingTempDirectory(): string
+    {
+        $path = $this->localProcessingRoot().'/temp';
+        File::ensureDirectoryExists($path);
+
+        return $path;
+    }
+
+    private function localProcessingWorkDirectory(): string
+    {
+        $path = $this->localProcessingRoot().'/work/'.Str::uuid();
+        File::ensureDirectoryExists($path);
+
+        return $path;
+    }
+
+    private function localProcessingRoot(): string
+    {
+        $path = rtrim(sys_get_temp_dir(), '/').'/selloff-media';
+        File::ensureDirectoryExists($path);
+
+        return $path;
+    }
+
+    private function resolveStorageDisk(string $disk): string
+    {
+        return match ($disk) {
+            'aws_s3', 'amazon_s3' => 's3',
+            default => $disk,
+        };
     }
 
     /**
@@ -404,7 +434,15 @@ class MediaUploadService
             throw new InvalidArgumentException('Unable to read processed upload.');
         }
 
-        Storage::disk($disk)->put($storagePath, $stream, ['visibility' => 'public']);
+        $stored = Storage::disk($this->resolveStorageDisk($disk))->put(
+            $storagePath,
+            $stream,
+            ['visibility' => 'public'],
+        );
         fclose($stream);
+
+        if ($stored === false) {
+            throw new InvalidArgumentException("Failed to store upload on disk [{$disk}].");
+        }
     }
 }

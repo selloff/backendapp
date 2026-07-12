@@ -124,6 +124,20 @@ test('slider upload stores optimized image under uploads slider', function () {
     Storage::disk('public')->assertExists($mobile['path']);
 });
 
+test('product upload stores files when media disk uses aws_s3 alias', function () {
+    Storage::fake('s3');
+    config(['selloff.media_disk' => 'aws_s3']);
+
+    $service = app(MediaUploadService::class);
+    $result = $service->upload(UploadedFile::fake()->image('product.jpg', 2000, 2000), 'product');
+
+    expect($result['disk'])->toBe('aws_s3');
+    expect($result['path'])->toMatch('/^\d{6}\/img_w\d+_/');
+
+    $storagePath = 'uploads/images/'.$result['path'];
+    Storage::disk('s3')->assertExists($storagePath);
+});
+
 test('registry exposes all legacy upload contexts', function () {
     $contexts = MediaUploadRegistry::contexts();
 

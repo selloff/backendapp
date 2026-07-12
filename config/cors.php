@@ -1,7 +1,7 @@
 <?php
 
 $allowedOrigins = array_values(array_filter(array_unique(array_merge(
-    array_filter([env('FRONTEND_URL')]),
+    array_filter([env('FRONTEND_URL'), env('SPA_URL')]),
     array_map('trim', explode(',', (string) env('CORS_ALLOWED_ORIGINS', ''))),
 ))));
 
@@ -12,9 +12,8 @@ return [
     | Cross-Origin Resource Sharing (CORS) Configuration
     |--------------------------------------------------------------------------
     |
-    | Local SPA dev: set FRONTEND_URL=http://localhost:5173 (or add origins via
-    | CORS_ALLOWED_ORIGINS). Prefer same-origin requests through the Vite proxy
-    | (VITE_API_BASE_URL=/api/v1) to avoid CORS entirely during demo dev.
+    | SPA requests send Authorization: Bearer, so wildcard origins are unsafe.
+    | Set FRONTEND_URL (and optionally CORS_ALLOWED_ORIGINS) on staging/production.
     |
     */
 
@@ -22,9 +21,13 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => $allowedOrigins !== [] ? $allowedOrigins : ['*'],
+    'allowed_origins' => $allowedOrigins,
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => [
+        '#\Ahttps://([a-z0-9-]+\.)*selloff\.ng\z#',
+        '#\Ahttp://localhost(:\d+)?\z#',
+        '#\Ahttp://127\.0\.0\.1(:\d+)?\z#',
+    ],
 
     'allowed_headers' => ['*'],
 

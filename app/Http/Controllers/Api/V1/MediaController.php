@@ -8,7 +8,9 @@ use App\Services\Media\Upload\MediaUploadRegistry;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use InvalidArgumentException;
 
 class MediaController extends Controller
 {
@@ -32,11 +34,22 @@ class MediaController extends Controller
             'variant' => ['sometimes', 'nullable', 'string'],
         ]);
 
-        $result = $this->mediaUpload->upload(
-            $validated['file'],
-            $validated['context'] ?? 'temp',
-            is_string($variant) && $variant !== '' ? $variant : null,
-        );
+        try {
+            $result = $this->mediaUpload->upload(
+                $validated['file'],
+                $validated['context'] ?? 'temp',
+                is_string($variant) && $variant !== '' ? $variant : null,
+            );
+        } catch (InvalidArgumentException $exception) {
+            return ApiResponse::error($exception->getMessage(), 422);
+        } catch (\Throwable $exception) {
+            Log::error('Media upload failed.', [
+                'context' => $validated['context'] ?? 'temp',
+                'message' => $exception->getMessage(),
+            ]);
+
+            return ApiResponse::error('Image upload failed.', 500);
+        }
 
         return ApiResponse::success($result, 201);
     }
