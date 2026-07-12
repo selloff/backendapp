@@ -11,6 +11,7 @@ use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminShopOpeningController extends Controller
@@ -76,7 +77,7 @@ class AdminShopOpeningController extends Controller
         Request $request,
         User $user,
         VendorShopOpeningDocumentService $documents,
-    ): StreamedResponse {
+    ): StreamedResponse|Response {
         $data = $request->validate([
             'path' => ['required', 'string', 'max:2048'],
         ]);
@@ -84,15 +85,26 @@ class AdminShopOpeningController extends Controller
         $document = $documents->findDocument($user, $data['path']);
         abort_if($document === null, 404);
 
-        $location = $documents->resolveReadableLocation($document);
-        abort_if($location === null, 404);
+        $resolved = $documents->resolveInlineView($document);
+        abort_if($resolved === null, 404);
 
-        $filename = (string) ($document['name'] ?? basename($location['path']));
-        $mime = Storage::disk($location['disk'])->mimeType($location['path']) ?? 'application/octet-stream';
-
-        return Storage::disk($location['disk'])->response($location['path'], $filename, [
-            'Content-Type' => $mime,
+        $filename = (string) ($document['name'] ?? basename($document['path']));
+        $headers = [
             'Content-Disposition' => 'inline; filename="'.$filename.'"',
+        ];
+
+        if ($resolved['type'] === 'contents') {
+            return response($resolved['content'], 200, [
+                ...$headers,
+                'Content-Type' => $resolved['mime'],
+            ]);
+        }
+
+        $mime = Storage::disk($resolved['disk'])->mimeType($resolved['path']) ?? 'application/octet-stream';
+
+        return Storage::disk($resolved['disk'])->response($resolved['path'], $filename, [
+            ...$headers,
+            'Content-Type' => $mime,
         ]);
     }
 

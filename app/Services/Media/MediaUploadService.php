@@ -7,6 +7,7 @@ use App\Services\Media\Upload\MediaUploadRegistry;
 use App\Support\MediaUrl;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -139,7 +140,92 @@ class MediaUploadService
             }
         }
 
+        foreach ($this->documentStorageDisksToProbe($storage) as $disk) {
+            if (! $this->isRemoteObjectDisk($disk)) {
+                continue;
+            }
+
+            foreach ($this->supportDocumentStorageKeys($path) as $storageKey) {
+                try {
+                    $stream = Storage::disk($disk)->readStream($storageKey);
+                    if (is_resource($stream)) {
+                        fclose($stream);
+
+                        return ['disk' => $disk, 'path' => $storageKey];
+                    }
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+        }
+
         return null;
+    }
+
+    /**
+     * @return array{type: 'disk', disk: string, path: string}|array{type: 'contents', content: string, mime: string}|null
+     */
+    public function resolveInlineSupportDocument(string $path, ?string $storage = null): ?array
+    {
+        $diskLocation = $this->resolveReadableSupportDocument($path, $storage);
+        if ($diskLocation !== null) {
+            return [
+                'type' => 'disk',
+                'disk' => $diskLocation['disk'],
+                'path' => $diskLocation['path'],
+            ];
+        }
+
+        foreach ($this->supportDocumentRemoteFetchUrls($path, $storage) as $url) {
+            try {
+                $response = Http::timeout(15)->get($url);
+                if ($response->successful()) {
+                    return [
+                        'type' => 'contents',
+                        'content' => $response->body(),
+                        'mime' => $response->header('Content-Type') ?? 'application/octet-stream',
+                    ];
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function supportDocumentRemoteFetchUrls(string $path, ?string $storage = null): array
+    {
+        $urls = [];
+
+        foreach ($this->documentStorageDisksToProbe($storage) as $disk) {
+            if (! $this->isRemoteObjectDisk($disk)) {
+                continue;
+            }
+
+            foreach ($this->supportDocumentStorageKeys($path) as $key) {
+                $urls[] = $this->urlFor($key, $disk);
+            }
+        }
+
+        $appUrl = rtrim((string) config('app.url'), '/');
+        if ($appUrl !== '') {
+            foreach ($this->supportDocumentStorageKeys($path) as $key) {
+                $urls[] = $appUrl.'/'.ltrim($key, '/');
+            }
+        }
+
+        $legacyMediaUrl = rtrim((string) config('selloff.legacy_media_public_url'), '/');
+        if ($legacyMediaUrl !== '') {
+            foreach ($this->supportDocumentStorageKeys($path) as $key) {
+                $urls[] = $legacyMediaUrl.'/'.ltrim($key, '/');
+            }
+        }
+
+        return array_values(array_unique(array_filter($urls)));
     }
 
     /**
@@ -166,7 +252,37 @@ class MediaUploadService
             $keys[] = $basename;
         }
 
+        $keys = array_merge($keys, $this->legacyDatedSupportObjectKeys($path));
+
         return array_values(array_unique(array_filter($keys)));
+    }
+
+    /**
+     * Legacy uploads often stored files under uploads/support/{Ym}/file_* while
+     * vendor_documents kept the flat uploads/support/file_* reference.
+     *
+     * @return list<string>
+     */
+    private function legacyDatedSupportObjectKeys(string $path): array
+    {
+        $filename = basename($path);
+        if ($filename === '' || ! str_starts_with($filename, 'file_')) {
+            return [];
+        }
+
+        if (preg_match('#^uploads/support/\d{6}/#', $path) === 1) {
+            return [];
+        }
+
+        $keys = [];
+        $cursor = now();
+
+        for ($i = 0; $i < 72; $i++) {
+            $keys[] = 'uploads/support/'.$cursor->format('Ym').'/'.$filename;
+            $cursor = $cursor->subMonth();
+        }
+
+        return $keys;
     }
 
     public function normalizeSupportDocumentReference(string $path): string
@@ -205,6 +321,7 @@ class MediaUploadService
 
         $disks[] = $this->resolveStorageDisk((string) config('selloff.media_disk', 'public'));
         $disks[] = 's3';
+        $disks[] = 'aws_s3';
         $disks[] = 'public';
 
         return array_values(array_unique(array_filter($disks)));

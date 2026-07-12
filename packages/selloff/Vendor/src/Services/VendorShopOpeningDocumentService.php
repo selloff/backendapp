@@ -38,11 +38,11 @@ class VendorShopOpeningDocumentService
 
     /**
      * @param  array{name: string, path: string, storage?: string|null}  $document
-     * @return array{disk: string, path: string}|null
+     * @return array{type: 'disk', disk: string, path: string}|array{type: 'contents', content: string, mime: string}|null
      */
-    public function resolveReadableLocation(array $document): ?array
+    public function resolveInlineView(array $document): ?array
     {
-        return $this->media->resolveReadableSupportDocument(
+        return $this->media->resolveInlineSupportDocument(
             $document['path'],
             $document['storage'] ?? null,
         );

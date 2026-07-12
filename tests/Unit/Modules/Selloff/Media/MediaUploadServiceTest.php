@@ -3,6 +3,7 @@
 use App\Services\Media\MediaUploadService;
 use App\Services\Media\Upload\MediaUploadRegistry;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
@@ -153,6 +154,47 @@ test('support document resolver finds files on s3 with legacy path aliases', fun
         'uploads/support/file_demo_id.jpg',
         'support/file_demo_id.jpg',
     ))->toBeTrue();
+});
+
+test('support document resolver finds legacy dated support folder objects', function () {
+    Storage::fake('s3');
+    config(['selloff.media_disk' => 's3']);
+
+    $filename = 'file_68b13dafe67e48-18174823-39576584.jpg';
+    $storagePath = 'uploads/support/202607/'.$filename;
+    Storage::disk('s3')->put($storagePath, 'image-bytes');
+
+    $service = app(MediaUploadService::class);
+    $resolved = $service->resolveReadableSupportDocument('uploads/support/'.$filename);
+
+    expect($resolved)->toBe(['disk' => 's3', 'path' => $storagePath]);
+});
+
+test('support document resolver fetches from legacy media public url when disk lookup fails', function () {
+    Storage::fake('public');
+    Storage::fake('s3');
+    Http::fake([
+        'https://selloff.ng/*' => Http::response(
+            'image-bytes',
+            200,
+            ['Content-Type' => 'image/jpeg'],
+        ),
+        '*' => Http::response('', 404),
+    ]);
+
+    config([
+        'selloff.media_disk' => 'public',
+        'selloff.legacy_media_public_url' => 'https://selloff.ng',
+    ]);
+
+    $service = app(MediaUploadService::class);
+    $resolved = $service->resolveInlineSupportDocument('uploads/support/file_68b13dafe67e48-18174823-39576584.jpg');
+
+    expect($resolved)->toBe([
+        'type' => 'contents',
+        'content' => 'image-bytes',
+        'mime' => 'image/jpeg',
+    ]);
 });
 
 test('registry exposes all legacy upload contexts', function () {

@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -177,5 +178,61 @@ test('admin can view shop opening documents stored on s3 with legacy storage ali
 
     $this->get('/api/v1/admin/shop-opening/requests/'.$buyer->id.'/documents/view?path='.urlencode($path))
         ->assertOk()
+        ->assertHeader('content-disposition', 'inline; filename="National ID"');
+});
+
+test('admin can view shop opening document when only legacy dated s3 key exists', function () {
+    Storage::fake('s3');
+    config(['selloff.media_disk' => 's3']);
+
+    $filename = 'file_68b13dafe67e48-18174823-39576584.jpg';
+    $dbPath = 'uploads/support/'.$filename;
+    $storagePath = 'uploads/support/202607/'.$filename;
+    Storage::disk('s3')->put($storagePath, 'fake-image-content');
+
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $buyer->update([
+        'vendor_documents' => [
+            ['name' => 'National ID', 'path' => $dbPath, 'storage' => 'aws_s3'],
+        ],
+    ]);
+
+    Sanctum::actingAs($admin);
+
+    $this->get('/api/v1/admin/shop-opening/requests/'.$buyer->id.'/documents/view?path='.urlencode($dbPath))
+        ->assertOk()
+        ->assertHeader('content-disposition', 'inline; filename="National ID"');
+});
+
+test('admin can view shop opening document via legacy media public url fallback', function () {
+    Storage::fake('public');
+    Storage::fake('s3');
+    config([
+        'selloff.media_disk' => 'public',
+        'selloff.legacy_media_public_url' => 'https://selloff.ng',
+    ]);
+
+    $filename = 'file_68b13dafe67e48-18174823-39576584.jpg';
+    $dbPath = 'uploads/support/'.$filename;
+
+    Http::fake([
+        'https://selloff.ng/*' => Http::response('fake-image-content', 200, ['Content-Type' => 'image/jpeg']),
+        '*' => Http::response('', 404),
+    ]);
+
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $buyer->update([
+        'vendor_documents' => [
+            ['name' => 'National ID', 'path' => $dbPath],
+        ],
+    ]);
+
+    Sanctum::actingAs($admin);
+
+    $this->get('/api/v1/admin/shop-opening/requests/'.$buyer->id.'/documents/view?path='.urlencode($dbPath))
+        ->assertOk()
+        ->assertHeader('content-type', 'image/jpeg')
         ->assertHeader('content-disposition', 'inline; filename="National ID"');
 });
