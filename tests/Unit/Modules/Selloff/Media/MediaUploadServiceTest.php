@@ -138,6 +138,23 @@ test('product upload stores files when media disk uses aws_s3 alias', function (
     Storage::disk('s3')->assertExists($storagePath);
 });
 
+test('support document resolver finds files on s3 with legacy path aliases', function () {
+    Storage::fake('s3');
+    config(['selloff.media_disk' => 's3']);
+
+    $storagePath = 'uploads/support/file_demo_id.jpg';
+    Storage::disk('s3')->put($storagePath, 'image-bytes');
+
+    $service = app(MediaUploadService::class);
+    $resolved = $service->resolveReadableSupportDocument('support/file_demo_id.jpg', 'aws_s3');
+
+    expect($resolved)->toBe(['disk' => 's3', 'path' => $storagePath]);
+    expect($service->supportDocumentPathsMatch(
+        'uploads/support/file_demo_id.jpg',
+        'support/file_demo_id.jpg',
+    ))->toBeTrue();
+});
+
 test('registry exposes all legacy upload contexts', function () {
     $contexts = MediaUploadRegistry::contexts();
 

@@ -126,6 +126,95 @@ class MediaUploadService
         return MediaUrl::absolute("{$prefix}/{$path}");
     }
 
+    /**
+     * @return array{disk: string, path: string}|null
+     */
+    public function resolveReadableSupportDocument(string $path, ?string $storage = null): ?array
+    {
+        foreach ($this->documentStorageDisksToProbe($storage) as $disk) {
+            foreach ($this->supportDocumentStorageKeys($path) as $storageKey) {
+                if (Storage::disk($disk)->exists($storageKey)) {
+                    return ['disk' => $disk, 'path' => $storageKey];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function supportDocumentStorageKeys(string $path): array
+    {
+        $path = $this->normalizeSupportDocumentReference($path);
+        $basename = basename($path);
+        $keys = [$path];
+
+        if (str_starts_with($path, 'uploads/support/')) {
+            $keys[] = substr($path, strlen('uploads/support/'));
+            $keys[] = 'support/'.substr($path, strlen('uploads/support/'));
+        } elseif (str_starts_with($path, 'support/')) {
+            $keys[] = 'uploads/'.$path;
+        } else {
+            $keys[] = 'uploads/support/'.$path;
+            $keys[] = 'support/'.$path;
+        }
+
+        if ($basename !== $path) {
+            $keys[] = 'uploads/support/'.$basename;
+            $keys[] = $basename;
+        }
+
+        return array_values(array_unique(array_filter($keys)));
+    }
+
+    public function normalizeSupportDocumentReference(string $path): string
+    {
+        $path = trim($path);
+        if ($path === '') {
+            return '';
+        }
+
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            $path = (string) (parse_url($path, PHP_URL_PATH) ?? '');
+        }
+
+        return ltrim($path, '/');
+    }
+
+    public function supportDocumentPathsMatch(string $requested, string $stored): bool
+    {
+        $requestedKeys = $this->supportDocumentStorageKeys($requested);
+        $storedKeys = $this->supportDocumentStorageKeys($stored);
+
+        return $requestedKeys !== [] && $storedKeys !== [] && count(array_intersect($requestedKeys, $storedKeys)) > 0;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function documentStorageDisksToProbe(?string $storage = null): array
+    {
+        $disks = [];
+
+        $storage = trim((string) $storage);
+        if ($storage !== '' && $storage !== 'local') {
+            $disks[] = $this->resolveStorageDisk($storage);
+        }
+
+        $disks[] = $this->resolveStorageDisk((string) config('selloff.media_disk', 'public'));
+        $disks[] = 's3';
+        $disks[] = 'public';
+
+        return array_values(array_unique(array_filter($disks)));
+    }
+
+    public function normalizeStorageDisk(string $disk): string
+    {
+        return $this->resolveStorageDisk($disk);
+    }
+
     public function normalizeContext(string $context): string
     {
         return self::CONTEXT_ALIASES[$context] ?? $context;

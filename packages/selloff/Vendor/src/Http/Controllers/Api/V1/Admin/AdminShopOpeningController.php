@@ -5,6 +5,7 @@ namespace App\Modules\Selloff\Vendor\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Modules\Selloff\Notification\Services\ShopOpeningEmailService;
+use App\Modules\Selloff\Vendor\Services\VendorShopOpeningDocumentService;
 use App\Services\Auth\RolePermissionSync;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -71,24 +72,25 @@ class AdminShopOpeningController extends Controller
         return ApiResponse::success($this->formatRequest($fresh));
     }
 
-    public function viewDocument(Request $request, User $user): StreamedResponse
-    {
+    public function viewDocument(
+        Request $request,
+        User $user,
+        VendorShopOpeningDocumentService $documents,
+    ): StreamedResponse {
         $data = $request->validate([
             'path' => ['required', 'string', 'max:2048'],
         ]);
 
-        $document = $this->findVendorDocument($user, $data['path']);
+        $document = $documents->findDocument($user, $data['path']);
         abort_if($document === null, 404);
 
-        $disk = $this->resolveDocumentDisk($document);
-        $path = ltrim((string) $document['path'], '/');
+        $location = $documents->resolveReadableLocation($document);
+        abort_if($location === null, 404);
 
-        abort_unless(Storage::disk($disk)->exists($path), 404);
+        $filename = (string) ($document['name'] ?? basename($location['path']));
+        $mime = Storage::disk($location['disk'])->mimeType($location['path']) ?? 'application/octet-stream';
 
-        $filename = (string) ($document['name'] ?? basename($path));
-        $mime = Storage::disk($disk)->mimeType($path) ?? 'application/octet-stream';
-
-        return Storage::disk($disk)->response($path, $filename, [
+        return Storage::disk($location['disk'])->response($location['path'], $filename, [
             'Content-Type' => $mime,
             'Content-Disposition' => 'inline; filename="'.$filename.'"',
         ]);
@@ -166,49 +168,5 @@ class AdminShopOpeningController extends Controller
         }
 
         return $location !== '' ? $location : null;
-    }
-
-    /**
-     * @return array{name: string, path: string, storage?: string}|null
-     */
-    private function findVendorDocument(User $user, string $path): ?array
-    {
-        $normalized = ltrim($path, '/');
-
-        foreach ($user->vendor_documents ?? [] as $document) {
-            if (! is_array($document)) {
-                continue;
-            }
-
-            $documentPath = ltrim((string) ($document['path'] ?? ''), '/');
-            if ($documentPath === '' || $documentPath !== $normalized) {
-                continue;
-            }
-
-            return [
-                'name' => (string) ($document['name'] ?? basename($documentPath)),
-                'path' => $documentPath,
-                'storage' => isset($document['storage']) ? (string) $document['storage'] : null,
-            ];
-        }
-
-        return null;
-    }
-
-    /**
-     * @param  array{name: string, path: string, storage?: string|null}  $document
-     */
-    private function resolveDocumentDisk(array $document): string
-    {
-        $storage = trim((string) ($document['storage'] ?? ''));
-
-        if ($storage === '' || $storage === 'local') {
-            $storage = (string) config('selloff.media_disk', 'public');
-        }
-
-        return match ($storage) {
-            'aws_s3', 'amazon_s3' => 's3',
-            default => $storage,
-        };
     }
 }

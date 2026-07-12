@@ -153,3 +153,29 @@ test('admin can view shop opening documents inline through authenticated proxy',
     $this->get('/api/v1/admin/shop-opening/requests/'.$buyer->id.'/documents/view?path='.urlencode('uploads/support/missing.jpg'))
         ->assertNotFound();
 });
+
+test('admin can view shop opening documents stored on s3 with legacy storage alias', function () {
+    Storage::fake('s3');
+    config(['selloff.media_disk' => 's3']);
+
+    $path = 'uploads/support/file_68b31eba183fe7-63101679-38061330.jpg';
+    Storage::disk('s3')->put($path, 'fake-image-content');
+
+    $admin = User::query()->where('email', 'superadmin@selloff.test')->firstOrFail();
+    $buyer = User::query()->where('email', 'buyer@selloff.test')->firstOrFail();
+    $buyer->update([
+        'vendor_documents' => [
+            [
+                'name' => 'National ID',
+                'path' => $path,
+                'storage' => 'aws_s3',
+            ],
+        ],
+    ]);
+
+    Sanctum::actingAs($admin);
+
+    $this->get('/api/v1/admin/shop-opening/requests/'.$buyer->id.'/documents/view?path='.urlencode($path))
+        ->assertOk()
+        ->assertHeader('content-disposition', 'inline; filename="National ID"');
+});
